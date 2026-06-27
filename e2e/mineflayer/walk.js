@@ -41,6 +41,13 @@ async function joinAndWalk({
     bot.once("spawn", async () => {
       clearTimeout(timer);
       try {
+        // On a freshly-generated world the spawn chunks may not be loaded yet;
+        // the server rejects movement until they are. Wait for them (bounded),
+        // then let the bot settle on the ground before walking.
+        if (typeof bot.waitForChunksToLoad === "function") {
+          await Promise.race([bot.waitForChunksToLoad(), sleep(25000)]);
+        }
+        await sleep(1500);
         const start = bot.entity.position.clone();
         log(`${username}: spawned on ${bot.version} at (${start.x.toFixed(1)},${start.y.toFixed(1)},${start.z.toFixed(1)})`);
         bot.setControlState("sprint", true);
