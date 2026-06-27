@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quetzel-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+    {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "operator") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # single leader; avoid two reconcilers at once
+  selector:
+    matchLabels:
+      {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "operator") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/catalog: {{ .Files.Get "files/catalog.json" | sha256sum }}
+      labels:
+        {{- include "quetzel.labels" . | nindent 8 }}
+        {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "operator") | nindent 8 }}
+    spec:
+      serviceAccountName: quetzel-operator
+      containers:
+        - name: operator
+          image: {{ .Values.operator.image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["kopf", "run", "--standalone", "--namespace", "{{ include "quetzel.watchNamespace" . }}", "-m", "quetzel_operator.handlers"]
+          env:
+            - name: CATALOG_PATH
+              value: /etc/quetzel/catalog.json
+          volumeMounts:
+            - name: catalog
+              mountPath: /etc/quetzel
+              readOnly: true
+          resources:
+            {{- toYaml .Values.operator.resources | nindent 12 }}
+      volumes:
+        - name: catalog
+          configMap:
+            name: quetzel-catalog

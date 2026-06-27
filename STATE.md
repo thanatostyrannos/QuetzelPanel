@@ -89,3 +89,32 @@ Next: When B1 resolved — build images (nerdctl k8s.io), apply CRD+RBAC, run
       operator, then exercise P1–P6 + DoD on the live cluster. Helm chart +
       install.sh/uninstall.sh still to write.
 Open issues: B1 (cluster down); operator handlers.py unverified against a live API.
+
+## Iteration 4 — 2026-06-27 ~00:40
+Phase: Packaging (user-directed) — Helm chart, CRD, RBAC, Dockerfiles, installers
+Action: Wrote the full platform packaging (validated offline; not deployed, B1):
+  - charts/quetzel Helm chart: CRD (status subresource + printer cols + OpenAPI
+    schema), operator/backend SAs + least-privilege Roles/RoleBindings, catalog
+    ConfigMap (embeds files/catalog.json exported from backend), operator/backend/
+    frontend Deployments, backend+frontend Services, Traefik Ingress, NOTES.txt.
+  - Dockerfiles: backend (uvicorn), operator (kopf), frontend (node build -> nginx
+    + baked nginx.conf proxying /api -> quetzel-backend). .dockerignore.
+  - install.sh (idempotent: prereqs, cluster/k3s detect, catalog export, image
+    build, helm upgrade --install, rollout waits, prints URL; PROFILE=prod stub),
+    uninstall.sh (PURGE opt), build-images.sh (nerdctl k8s.io / docker fallback).
+  - Added P5 PodDisruptionBudget builder to operator (TDD) + wired into reconciler.
+  - README.md (reproducible run instructions), .gitattributes (LF for *.sh).
+Commands:
+  $ operator pytest                 → 25 passed (added PDB test)
+  $ helm lint charts/quetzel        → 0 failed (only icon-recommended INFO)
+  $ helm template ... (local+prod)  → 14 docs each, parsed OK by yaml
+      objects: CRD, 2 SA, 2 Role, 2 RoleBinding, ConfigMap, 3 Deployment,
+               2 Service, Ingress
+      catalog ConfigMap embeds valid JSON (4 games)
+      operator cmd: kopf run --standalone --namespace quetzel -m quetzel_operator.handlers
+      CRD gameservers.quetzel.gg Namespaced, status subresource: True
+      backend env: QUETZEL_PROVIDER=k8s, QUETZEL_NAMESPACE=quetzel
+Result: PASS (acceptance check: chart lints + renders valid manifests, both profiles)
+Next: Resolve B1, then ./install.sh on the live cluster and run DoD P0–P6.
+Open issues: B1 (cluster down) — install.sh/build-images.sh/handlers.py not yet
+      exercised against a real cluster (offline-validated only).

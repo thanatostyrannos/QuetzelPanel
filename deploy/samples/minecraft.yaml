@@ -1,0 +1,13 @@
+apiVersion: quetzel.gg/v1alpha1
+kind: GameServer
+metadata:
+  name: mc-demo
+  namespace: quetzel
+spec:
+  game: minecraft
+  version: "1.21.1"
+  storageSize: 2Gi
+  rconEnabled: true
+  # EULA is set from the catalog default (EULA=TRUE) and is visible there.
+  env:
+    MOTD: "QuetzelPanel demo server"

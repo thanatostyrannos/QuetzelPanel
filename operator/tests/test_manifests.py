@@ -183,3 +183,14 @@ def test_children_attach_owner_reference():
     svc = m.build_service("mc1", NS, MC_GAME, rcon_enabled=True, owner=owner)
     assert ss["metadata"]["ownerReferences"][0]["uid"] == "u1"
     assert svc["metadata"]["ownerReferences"][0]["uid"] == "u1"
+
+
+# --- pod disruption budget (P5) ----------------------------------------------
+
+def test_pdb_keeps_one_pod_available_and_targets_instance():
+    pdb = m.build_pdb("mc1", NS, owner=m.owner_reference("mc1", "u1"))
+    assert pdb["kind"] == "PodDisruptionBudget"
+    assert pdb["apiVersion"] == "policy/v1"
+    assert pdb["spec"]["minAvailable"] == 1
+    assert pdb["spec"]["selector"]["matchLabels"]["quetzel.gg/server"] == "mc1"
+    assert pdb["metadata"]["ownerReferences"][0]["uid"] == "u1"

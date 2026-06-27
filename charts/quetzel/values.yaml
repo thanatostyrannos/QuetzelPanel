@@ -1,0 +1,58 @@
+# QuetzelPanel platform chart values.
+
+# local  -> rely on k3s bundled ServiceLB / local-path / Traefik (this machine)
+# prod   -> install.sh additionally bootstraps MetalLB/Longhorn/etc (stub, see CONFIG.md)
+profile: local
+
+# Install the GameServer CRD as part of the chart (kept on uninstall for data safety).
+crd:
+  install: true
+
+image:
+  pullPolicy: IfNotPresent
+
+operator:
+  image: quetzel/operator:dev
+  # Empty => watch the release namespace. Set to watch elsewhere.
+  watchNamespace: ""
+  resources:
+    requests: { cpu: "50m", memory: "128Mi" }
+    limits: { cpu: "500m", memory: "256Mi" }
+
+backend:
+  image: quetzel/backend:dev
+  replicas: 1
+  provider: k8s            # in-cluster talks to real GameServer CRs
+  service:
+    port: 8000
+  resources:
+    requests: { cpu: "50m", memory: "128Mi" }
+    limits: { cpu: "500m", memory: "256Mi" }
+
+frontend:
+  image: quetzel/frontend:dev
+  replicas: 1
+  service:
+    port: 80
+  resources:
+    requests: { cpu: "25m", memory: "64Mi" }
+    limits: { cpu: "200m", memory: "128Mi" }
+
+ingress:
+  enabled: true
+  className: traefik
+  host: quetzel.localhost
+
+# prod-profile prerequisites — wired but disabled locally (handled by install.sh, not this chart)
+prod:
+  metallb:
+    enabled: false
+    addressPool: "192.168.1.240-192.168.1.250"
+  longhorn:
+    enabled: false
+  ingressNginx:
+    enabled: false
+  certManager:
+    enabled: false
+  monitoring:
+    enabled: false

@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quetzel-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+    {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "quetzel.labels" . | nindent 8 }}
+        {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 8 }}
+    spec:
+      containers:
+        - name: frontend
+          image: {{ .Values.frontend.image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # nginx serves the SPA and proxies /api/ -> quetzel-backend:8000 (baked nginx.conf)
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quetzel-frontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "frontend") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http

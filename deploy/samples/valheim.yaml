@@ -1,0 +1,13 @@
+apiVersion: quetzel.gg/v1alpha1
+kind: GameServer
+metadata:
+  name: valheim-demo
+  namespace: quetzel
+spec:
+  game: valheim
+  version: "stable"
+  storageSize: 5Gi
+  rconEnabled: false
+  env:
+    SERVER_NAME: "QuetzelPanel Valheim"
+    WORLD_NAME: "Midgard"

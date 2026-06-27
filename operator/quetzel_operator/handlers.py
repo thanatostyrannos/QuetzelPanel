@@ -37,6 +37,18 @@ def _apis():
     return client.CoreV1Api(), client.AppsV1Api()
 
 
+def _ensure_pdb(name, ns, owner, log) -> None:
+    policy = client.PolicyV1Api()
+    body = manifests.build_pdb(name, ns, owner=owner)
+    try:
+        policy.read_namespaced_pod_disruption_budget(name, ns)
+    except ApiException as e:
+        if e.status != 404:
+            raise
+        policy.create_namespaced_pod_disruption_budget(ns, body)
+        log.info(f"created pdb {name}")
+
+
 @kopf.on.startup()
 def configure(settings: kopf.OperatorSettings, **_):
     # Modest, predictable behavior for a single-node local operator.
@@ -134,6 +146,7 @@ def reconcile(spec, meta, name, namespace, patch, logger, **_):
         _ensure_secret(core, name, namespace, owner, logger)
     _ensure_service(core, name, namespace, game, rcon_enabled, owner, logger)
     _ensure_statefulset(apps, name, namespace, spec, game, owner, logger)
+    _ensure_pdb(name, namespace, owner, logger)
 
     s = _observe_status(core, apps, name, namespace, game)
     for k, v in s.items():

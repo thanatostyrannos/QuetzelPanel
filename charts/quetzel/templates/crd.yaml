@@ -1,0 +1,73 @@
+{{- if .Values.crd.install }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gameservers.quetzel.gg
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+  annotations:
+    # Keep the CRD (and thus user GameServers) on `helm uninstall` for data safety.
+    "helm.sh/resource-policy": keep
+spec:
+  group: quetzel.gg
+  scope: Namespaced
+  names:
+    kind: GameServer
+    plural: gameservers
+    singular: gameserver
+    shortNames: [gs]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - { name: Game, type: string, jsonPath: .spec.game }
+        - { name: Phase, type: string, jsonPath: .status.phase }
+        - { name: Address, type: string, jsonPath: .status.address }
+        - { name: Ready, type: boolean, jsonPath: .status.ready }
+        - { name: Age, type: date, jsonPath: .metadata.creationTimestamp }
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [game]
+              properties:
+                game:
+                  type: string
+                  description: Catalog id of the game to run (e.g. minecraft, valheim).
+                version:
+                  type: string
+                image:
+                  type: string
+                  description: Optional override of the catalog image.
+                resources:
+                  type: object
+                  properties:
+                    cpu: { type: string }
+                    mem: { type: string }
+                storageSize:
+                  type: string
+                  default: "2Gi"
+                env:
+                  type: object
+                  additionalProperties: { type: string }
+                rconEnabled:
+                  type: boolean
+                  default: true
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Provisioning, Running, Stopping, Error]
+                address: { type: string }
+                podName: { type: string }
+                ready: { type: boolean }
+                message: { type: string }
+{{- end }}

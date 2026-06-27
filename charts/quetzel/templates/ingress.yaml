@@ -1,0 +1,24 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: quetzel
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # Frontend serves the SPA and reverse-proxies /api/ to the backend,
+          # so a single route to the frontend is all Traefik needs.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: quetzel-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+{{- end }}

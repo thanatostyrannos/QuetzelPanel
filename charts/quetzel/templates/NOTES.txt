@@ -1,0 +1,24 @@
+QuetzelPanel {{ .Chart.AppVersion }} installed into namespace "{{ .Release.Namespace }}" (profile: {{ .Values.profile }}).
+
+Open the UI:
+{{- if .Values.ingress.enabled }}
+  http://{{ .Values.ingress.host }}/
+  (k3s Traefik serves *.localhost on 127.0.0.1; if it doesn't resolve, use port-forward below.)
+{{- end }}
+
+Port-forward fallback (always works):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/quetzel-frontend 8080:{{ .Values.frontend.service.port }}
+  then open http://localhost:8080/
+
+Check things:
+  kubectl -n {{ .Release.Namespace }} get pods
+  kubectl -n {{ .Release.Namespace }} get gameservers
+  kubectl -n {{ .Release.Namespace }} get gs -w     # watch a deploy reach Running
+
+Deploy a server from the CLI (or just use the UI):
+  kubectl -n {{ .Release.Namespace }} apply -f - <<'EOF'
+  apiVersion: quetzel.gg/v1alpha1
+  kind: GameServer
+  metadata: { name: mc-demo }
+  spec: { game: minecraft, version: "1.21.1" }
+  EOF

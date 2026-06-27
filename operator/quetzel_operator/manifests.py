@@ -128,6 +128,20 @@ def _container_env(spec: dict, game: dict, name: str) -> list[dict]:
     return env
 
 
+def build_pdb(name: str, namespace: str, owner: dict | None = None) -> dict:
+    """PodDisruptionBudget (P5): keep the single game pod available across
+    voluntary disruptions (node drains), so the world isn't yanked mid-session."""
+    return {
+        "apiVersion": "policy/v1",
+        "kind": "PodDisruptionBudget",
+        "metadata": _meta(name, namespace, owner),
+        "spec": {
+            "minAvailable": 1,
+            "selector": {"matchLabels": labels(name)},
+        },
+    }
+
+
 def build_statefulset(
     name: str, namespace: str, spec: dict, game: dict, owner: dict | None = None
 ) -> dict:

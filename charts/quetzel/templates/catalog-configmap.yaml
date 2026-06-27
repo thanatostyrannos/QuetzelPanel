@@ -1,0 +1,15 @@
+{{/*
+Game catalog, rendered from the canonical source (backend/app/catalog.py exported
+to charts/quetzel/files/catalog.json by install.sh). Mounted into the operator at
+/etc/quetzel/catalog.json so adding a game is a catalog change, not a code change.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quetzel-catalog
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+data:
+  catalog.json: |-
+    {{- .Files.Get "files/catalog.json" | nindent 4 }}

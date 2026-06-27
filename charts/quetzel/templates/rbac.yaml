@@ -1,0 +1,89 @@
+{{- $ns := .Release.Namespace -}}
+# --- Operator: full lifecycle of GameServers and the children it reconciles ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: quetzel-operator
+  namespace: {{ $ns }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: quetzel-operator
+  namespace: {{ $ns }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["quetzel.gg"]
+    resources: ["gameservers", "gameservers/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "secrets", "persistentvolumeclaims", "pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: quetzel-operator
+  namespace: {{ $ns }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: quetzel-operator
+subjects:
+  - kind: ServiceAccount
+    name: quetzel-operator
+    namespace: {{ $ns }}
+---
+# --- Backend: least privilege — only GameServer CRs it creates/lists/deletes ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: quetzel-backend
+  namespace: {{ $ns }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: quetzel-backend
+  namespace: {{ $ns }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["quetzel.gg"]
+    resources: ["gameservers"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["quetzel.gg"]
+    resources: ["gameservers/status"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: quetzel-backend
+  namespace: {{ $ns }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: quetzel-backend
+subjects:
+  - kind: ServiceAccount
+    name: quetzel-backend
+    namespace: {{ $ns }}
