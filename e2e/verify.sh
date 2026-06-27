@@ -152,7 +152,9 @@ reconcile_servers() {
     else
       local opts
       # ONLINE_MODE=FALSE so offline mineflayer bots can join (no Mojang auth).
-      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"ONLINE_MODE\":\"FALSE\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"700M\",\"MAX_PLAYERS\":\"$mp\"}}"
+      # FLAT world = instant gen + flat unobstructed ground so bots walk freely
+      # and deterministically (world type is irrelevant to the size/tenancy proof).
+      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"ONLINE_MODE\":\"FALSE\",\"LEVEL_TYPE\":\"FLAT\",\"GENERATE_STRUCTURES\":\"false\",\"SPAWN_PROTECTION\":\"0\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"700M\",\"MAX_PLAYERS\":\"$mp\"}}"
       api POST /servers "{\"name\":\"$server\",\"game\":\"minecraft\",\"options\":$opts}" >/dev/null
       if [ "$API_CODE" = "201" ]; then echo "   create $server (maxPlayers=$mp, customer=$cid)"; else echo "   create $server -> HTTP $API_CODE"; fi
     fi
