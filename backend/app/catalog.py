@@ -24,16 +24,17 @@ CATALOG: list[dict] = [
         "name": "Minecraft",
         "description": "Java Edition survival/creative server (itzg).",
         "image": "itzg/minecraft-server:latest",
-        # Player-based sizing (WP-B tunes). Small base heap suits PaperMC on a
-        # single box; per-player adds headroom up to the ceiling.
+        # Player-based sizing. The memory LIMIT must comfortably exceed the JVM
+        # heap (+ Paper/JVM non-heap overhead) or the pod OOM-CrashLoops. Base
+        # 1536Mi leaves ~500Mi headroom over a ~1G heap; per-player widens tiers.
         "sizing": {
-            "baseMemoryMiB": 768,
-            "memoryPerPlayerMiB": 12,
-            "baseCpuMilli": 250,
-            "cpuPerPlayerMilli": 5,
+            "baseMemoryMiB": 1536,
+            "memoryPerPlayerMiB": 128,
+            "baseCpuMilli": 500,
+            "cpuPerPlayerMilli": 125,
             "maxPlayers": 50,
-            "ceilingMemoryMiB": 4096,
-            "ceilingCpuMilli": 2000,
+            "ceilingMemoryMiB": 8192,
+            "ceilingCpuMilli": 4000,
         },
         "protocol": "tcp",
         "ports": [{"name": "game", "port": 25565, "protocol": "TCP"}],
