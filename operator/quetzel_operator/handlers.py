@@ -37,9 +37,9 @@ def _apis():
     return client.CoreV1Api(), client.AppsV1Api()
 
 
-def _ensure_pdb(name, ns, owner, log) -> None:
+def _ensure_pdb(name, ns, owner, log, customer=None) -> None:
     policy = client.PolicyV1Api()
-    body = manifests.build_pdb(name, ns, owner=owner)
+    body = manifests.build_pdb(name, ns, owner=owner, customer=customer)
     try:
         policy.read_namespaced_pod_disruption_budget(name, ns)
     except ApiException as e:
@@ -56,7 +56,7 @@ def configure(settings: kopf.OperatorSettings, **_):
     settings.watching.server_timeout = 60
 
 
-def _ensure_secret(core: client.CoreV1Api, name, ns, owner, log) -> None:
+def _ensure_secret(core: client.CoreV1Api, name, ns, owner, log, customer=None) -> None:
     sname = manifests.secret_name(name)
     try:
         core.read_namespaced_secret(sname, ns)
@@ -65,13 +65,13 @@ def _ensure_secret(core: client.CoreV1Api, name, ns, owner, log) -> None:
         if e.status != 404:
             raise
     password = manifests.generate_rcon_password()
-    body = manifests.build_secret(name, ns, password, owner=owner)
+    body = manifests.build_secret(name, ns, password, owner=owner, customer=customer)
     core.create_namespaced_secret(ns, body)
     log.info(f"created RCON secret {sname}")  # value never logged
 
 
-def _ensure_service(core: client.CoreV1Api, name, ns, game, rcon_enabled, owner, log) -> None:
-    body = manifests.build_service(name, ns, game, rcon_enabled, owner=owner)
+def _ensure_service(core: client.CoreV1Api, name, ns, game, rcon_enabled, owner, log, customer=None) -> None:
+    body = manifests.build_service(name, ns, game, rcon_enabled, owner=owner, customer=customer)
     try:
         core.read_namespaced_service(name, ns)
         core.patch_namespaced_service(
@@ -84,8 +84,8 @@ def _ensure_service(core: client.CoreV1Api, name, ns, game, rcon_enabled, owner,
         log.info(f"created service {name}")
 
 
-def _ensure_statefulset(apps: client.AppsV1Api, name, ns, spec, game, owner, log) -> None:
-    body = manifests.build_statefulset(name, ns, spec, game, owner=owner)
+def _ensure_statefulset(apps: client.AppsV1Api, name, ns, spec, game, owner, log, customer=None) -> None:
+    body = manifests.build_statefulset(name, ns, spec, game, owner=owner, customer=customer)
     try:
         apps.read_namespaced_stateful_set(name, ns)
         container = body["spec"]["template"]["spec"]["containers"][0]
@@ -140,13 +140,15 @@ def reconcile(spec, meta, name, namespace, patch, logger, **_):
 
     owner = manifests.owner_reference(name, meta["uid"])
     core, apps = _apis()
+    # WP-D: extract the owning customer so all child objects carry the label.
+    customer = spec.get("customer") or None
 
     rcon_enabled = bool(spec.get("rconEnabled")) and bool(game.get("rcon", {}).get("enabled"))
     if rcon_enabled:
-        _ensure_secret(core, name, namespace, owner, logger)
-    _ensure_service(core, name, namespace, game, rcon_enabled, owner, logger)
-    _ensure_statefulset(apps, name, namespace, spec, game, owner, logger)
-    _ensure_pdb(name, namespace, owner, logger)
+        _ensure_secret(core, name, namespace, owner, logger, customer=customer)
+    _ensure_service(core, name, namespace, game, rcon_enabled, owner, logger, customer=customer)
+    _ensure_statefulset(apps, name, namespace, spec, game, owner, logger, customer=customer)
+    _ensure_pdb(name, namespace, owner, logger, customer=customer)
 
     s = _observe_status(core, apps, name, namespace, game)
     for k, v in s.items():

@@ -57,6 +57,53 @@ def test_labels_include_instance():
     assert "app.kubernetes.io/instance" in lbl
 
 
+def test_labels_without_customer_omits_customer_key():
+    lbl = m.labels("mc1")
+    assert "quetzel.gg/customer" not in lbl
+
+
+def test_labels_with_customer_adds_customer_label():
+    """WP-D: quetzel.gg/customer is present when customer is set."""
+    lbl = m.labels("mc1", customer="acme")
+    assert lbl["quetzel.gg/customer"] == "acme"
+    # Existing labels are still there
+    assert lbl["quetzel.gg/server"] == "mc1"
+    assert lbl["app.kubernetes.io/managed-by"] == "quetzel-operator"
+
+
+def test_build_secret_with_customer_carries_label():
+    """WP-D: Secret metadata.labels includes quetzel.gg/customer."""
+    secret = m.build_secret("mc1", NS, "pw", customer="acme")
+    assert secret["metadata"]["labels"]["quetzel.gg/customer"] == "acme"
+
+
+def test_build_secret_without_customer_omits_label():
+    secret = m.build_secret("mc1", NS, "pw")
+    assert "quetzel.gg/customer" not in secret["metadata"]["labels"]
+
+
+def test_build_service_with_customer_carries_label():
+    """WP-D: Service metadata and selector both carry the customer label."""
+    svc = m.build_service("mc1", NS, MC_GAME, True, customer="acme")
+    assert svc["metadata"]["labels"]["quetzel.gg/customer"] == "acme"
+    assert svc["spec"]["selector"]["quetzel.gg/customer"] == "acme"
+
+
+def test_build_statefulset_with_customer_propagates_label():
+    """WP-D: StatefulSet metadata, selector, pod template, and VCT all carry label."""
+    sts = m.build_statefulset("mc1", NS, MC_SPEC, MC_GAME, customer="acme")
+    assert sts["metadata"]["labels"]["quetzel.gg/customer"] == "acme"
+    assert sts["spec"]["selector"]["matchLabels"]["quetzel.gg/customer"] == "acme"
+    assert sts["spec"]["template"]["metadata"]["labels"]["quetzel.gg/customer"] == "acme"
+
+
+def test_build_pdb_with_customer_carries_label():
+    """WP-D: PDB selector carries the customer label."""
+    pdb = m.build_pdb("mc1", NS, customer="acme")
+    assert pdb["metadata"]["labels"]["quetzel.gg/customer"] == "acme"
+    assert pdb["spec"]["selector"]["matchLabels"]["quetzel.gg/customer"] == "acme"
+
+
 def test_secret_name_derivation():
     assert m.secret_name("mc1") == "mc1-rcon"
 
