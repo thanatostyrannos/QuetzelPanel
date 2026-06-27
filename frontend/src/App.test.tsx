@@ -6,6 +6,7 @@ import { api } from "./api";
 import type { Game, GameServer } from "./types";
 
 vi.mock("./api", () => ({
+  setAuthToken: vi.fn(),
   api: {
     health: vi.fn(),
     games: vi.fn(),
@@ -13,6 +14,10 @@ vi.mock("./api", () => ({
     getServer: vi.fn(),
     createServer: vi.fn(),
     deleteServer: vi.fn(),
+    me: vi.fn(),
+    login: vi.fn(),
+    serverMetrics: vi.fn(),
+    clusterHealth: vi.fn(),
   },
 }));
 
@@ -66,6 +71,15 @@ function runningServer(name: string): GameServer {
 
 beforeEach(() => {
   serverState = [];
+  // Permissive/mock auth: /auth/me resolves so no login wall is shown.
+  vi.mocked(api.me).mockResolvedValue({ userId: "dev", username: "dev", role: "platform-admin", customerId: null });
+  vi.mocked(api.serverMetrics).mockResolvedValue({
+    name: "x", cpuPercent: 10, memoryPercent: 20, diskPercent: 5, cpuMilli: 100, memoryMiB: 256,
+  });
+  vi.mocked(api.clusterHealth).mockResolvedValue({
+    cluster: "local", nodesReady: 1, nodesTotal: 1, podsRunning: 1, podsError: 0,
+    serversDesired: 0, serversReady: 0, problems: [],
+  });
   vi.mocked(api.health).mockResolvedValue({ status: "ok", provider: "MockProvider" });
   vi.mocked(api.games).mockResolvedValue(GAMES);
   vi.mocked(api.servers).mockImplementation(async () => serverState);

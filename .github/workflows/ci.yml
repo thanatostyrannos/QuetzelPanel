@@ -89,7 +89,9 @@ jobs:
       - name: helm template (local profile)
         run: helm template quetzel charts/quetzel --set profile=local > /tmp/render-local.yaml
       - name: helm template (enterprise/prod profile)
-        run: helm template quetzel charts/quetzel -f charts/quetzel/values-enterprise.yaml > /tmp/render-enterprise.yaml
+        # Enterprise profile enables auth+postgres which require secrets; pass test
+        # values so the render is validated (real secrets come from --set at install).
+        run: helm template quetzel charts/quetzel -f charts/quetzel/values-enterprise.yaml --set auth.jwtSecret=ci-test --set postgres.password=ci-test > /tmp/render-enterprise.yaml
       - name: Assert renders are non-empty
         run: |
           test -s /tmp/render-local.yaml || { echo "local render empty"; exit 1; }

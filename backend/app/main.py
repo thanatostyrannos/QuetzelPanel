@@ -12,6 +12,8 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth.context import set_token_verifier
+from .auth.jwt import build_token_verifier, jwt_config_from_env
 from .deps import get_provider
 from .providers.base import Provider
 from .routers import auth, clusters, customers, games, metrics, servers
@@ -19,10 +21,15 @@ from .routers import auth, clusters, customers, games, metrics, servers
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Wire JWT auth when configured (JWT_SECRET present). With no config the
+    # verifier stays None and current_user is permissive (mock/dev demoable).
+    cfg = jwt_config_from_env()
+    set_token_verifier(build_token_verifier(cfg) if cfg else None)
     provider = get_provider()
     await provider.startup()
     yield
     await provider.shutdown()
+    set_token_verifier(None)
 
 
 app = FastAPI(title="QuetzelPanel API", version="0.2.0", lifespan=lifespan)

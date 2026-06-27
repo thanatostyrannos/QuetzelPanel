@@ -1,4 +1,9 @@
-"""CustomerStore interface + in-memory mock. Postgres impl lands with WP-A/WP-D."""
+"""CustomerStore interface + in-memory mock + factory.
+
+QUETZEL_USERSTORE=memory   (default) — InMemoryCustomerStore
+QUETZEL_USERSTORE=sqlite   — SQLiteCustomerStore (local profile)
+QUETZEL_USERSTORE=postgres — PostgresCustomerStore (enterprise stub; WP-A/WP-D)
+"""
 from __future__ import annotations
 
 import os
@@ -57,6 +62,11 @@ class PostgresCustomerStore(CustomerStore):
 
 def make_customer_store() -> CustomerStore:
     kind = os.getenv("QUETZEL_USERSTORE", "memory").lower()
+    if kind == "sqlite":
+        from .sqlite_store import SQLiteCustomerStore
+
+        db_path = os.getenv("QUETZEL_DB_PATH", "quetzel.db")
+        return SQLiteCustomerStore(db_path)
     if kind == "postgres":
         return PostgresCustomerStore(os.environ.get("QUETZEL_DB_DSN", ""))
     return InMemoryCustomerStore()

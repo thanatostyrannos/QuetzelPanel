@@ -27,6 +27,21 @@ spec:
               value: {{ .Values.backend.provider | quote }}
             - name: QUETZEL_NAMESPACE
               value: {{ .Release.Namespace | quote }}
+            - name: QUETZEL_USERSTORE
+              value: {{ .Values.backend.userstore | default "memory" | quote }}
+            - name: QUETZEL_DB_PATH
+              value: {{ .Values.backend.dbPath | default "/data/quetzel.db" | quote }}
+          {{- if or ((.Values.auth).enabled) ((.Values.postgres).enabled) }}
+          envFrom:
+            {{- if ((.Values.auth).enabled) }}
+            - secretRef:
+                name: quetzel-auth
+            {{- end }}
+            {{- if and ((.Values.auth).enabled) ((.Values.postgres).enabled) }}
+            - secretRef:
+                name: quetzel-postgres-credentials
+            {{- end }}
+          {{- end }}
           ports:
             - name: http
               containerPort: 8000

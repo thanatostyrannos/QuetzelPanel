@@ -4,10 +4,22 @@ import type { Game, GameServer } from "./types";
 import { GameCard } from "./components/GameCard";
 import { DeployModal } from "./components/DeployModal";
 import { ServerCard } from "./components/ServerCard";
+import { MetricsPanel } from "./components/MetricsPanel";
+import { ClusterHealthPanel } from "./components/ClusterHealthPanel";
+import { LoginPage } from "./components/LoginPage";
+import { useAuth } from "./auth/useAuth";
 
 type Toast = { id: number; kind: "ok" | "err"; text: string };
 
 export default function App() {
+  const { user, isAuthenticated, login, logout, loading: authLoading } = useAuth();
+  // Probe whether the backend enforces auth. In permissive/mock mode /auth/me
+  // returns a principal with no token, so no login wall is shown.
+  const [authRequired, setAuthRequired] = useState<boolean | null>(null);
+  useEffect(() => {
+    api.me().then(() => setAuthRequired(false)).catch(() => setAuthRequired(true));
+  }, []);
+
   const [games, setGames] = useState<Game[]>([]);
   const [servers, setServers] = useState<GameServer[]>([]);
   const [provider, setProvider] = useState<string>("");
@@ -31,8 +43,11 @@ export default function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
 
-  // Initial load: health + catalog.
+  const gated = authRequired === true && !isAuthenticated;
+
+  // Initial load: health + catalog (once we're past the auth gate).
   useEffect(() => {
+    if (gated) return;
     api
       .health()
       .then((h) => {
@@ -44,7 +59,7 @@ export default function App() {
       .games()
       .then(setGames)
       .catch(() => pushToast("err", "Failed to load game catalog"));
-  }, [pushToast]);
+  }, [gated, pushToast]);
 
   // Poll server list every 2s.
   const refreshServers = useCallback(async () => {
@@ -58,10 +73,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (gated) return;
     refreshServers();
     const t = setInterval(refreshServers, 2000);
     return () => clearInterval(t);
-  }, [refreshServers]);
+  }, [gated, refreshServers]);
 
   const deploy = async (payload: {
     name: string;
@@ -100,6 +116,18 @@ export default function App() {
 
   const running = servers.filter((s) => s.status.phase === "Running").length;
 
+  // Auth gate: show a splash while probing, then the login page if enforced.
+  if (authLoading || authRequired === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-white/50">
+        Loading…
+      </div>
+    );
+  }
+  if (gated) {
+    return <LoginPage onLogin={login} />;
+  }
+
   return (
     <div className="mx-auto min-h-full max-w-6xl px-5 pb-24 pt-8">
       {/* header */}
@@ -128,8 +156,26 @@ export default function App() {
               provider: <span className="font-semibold text-brand-400">{provider}</span>
             </span>
           )}
+          {user && (
+            <span className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-white/70">
+              <span className="font-semibold text-white/90">{user.username}</span>
+              <span className="text-white/40">·</span>
+              <span className="text-brand-400">{user.role}</span>
+              <button
+                onClick={logout}
+                className="ml-1 rounded-md px-2 py-0.5 text-white/60 transition hover:bg-white/10 hover:text-white"
+              >
+                Sign out
+              </button>
+            </span>
+          )}
         </div>
       </header>
+
+      {/* cluster health */}
+      <section className="pb-8">
+        <ClusterHealthPanel />
+      </section>
 
       {/* game library */}
       <section className="pb-10">
@@ -159,13 +205,15 @@ export default function App() {
         </div>
         <div className="flex flex-col gap-3">
           {servers.map((s) => (
-            <ServerCard
-              key={s.name}
-              server={s}
-              game={gamesById[s.spec.game]}
-              onDelete={remove}
-              deleting={!!deleting[s.name]}
-            />
+            <div key={s.name} className="flex flex-col gap-2">
+              <ServerCard
+                server={s}
+                game={gamesById[s.spec.game]}
+                onDelete={remove}
+                deleting={!!deleting[s.name]}
+              />
+              {s.status.phase === "Running" && <MetricsPanel serverName={s.name} />}
+            </div>
           ))}
           {servers.length === 0 && (
             <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-white/40">

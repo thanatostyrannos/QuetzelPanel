@@ -28,6 +28,9 @@ backend:
   image: ""
   replicas: 1
   provider: k8s            # in-cluster talks to real GameServer CRs
+  # User/customer persistence: memory (default) | sqlite | postgres.
+  userstore: memory
+  dbPath: /data/quetzel.db  # used when userstore=sqlite
   service:
     port: 8000
   resources:
@@ -47,6 +50,30 @@ ingress:
   enabled: true
   className: traefik
   host: quetzel.localhost
+
+# Authentication (WP-A). Disabled by default => mock/dev is permissive (no login
+# wall). Enable + pass a JWT secret to turn on enforcement:
+#   --set auth.enabled=true --set auth.jwtSecret=<random> [--set backend.userstore=sqlite]
+auth:
+  enabled: false
+  jwtSecret: ""        # REQUIRED when auth.enabled=true (pass via --set, never commit)
+  jwtAlgorithm: HS256
+  jwtTtl: 3600
+  google:
+    clientId: ""       # optional "Sign in with Google"; pass clientId+clientSecret via --set
+    clientSecret: ""
+    # redirectUri defaults to https://<ingress.host>/api/auth/google/callback
+
+# In-cluster Postgres for enterprise identity/tenancy. Disabled by default
+# (local uses memory/sqlite). Enable for the enterprise profile.
+postgres:
+  enabled: false
+  image: postgres:16-alpine
+  database: quetzel
+  username: quetzel
+  password: ""         # REQUIRED when postgres.enabled=true (pass via --set)
+  storageSize: 2Gi
+  # storageClass: ""
 
 # prod-profile prerequisites — wired but disabled locally (handled by install.sh, not this chart)
 prod:

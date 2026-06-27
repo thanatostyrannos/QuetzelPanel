@@ -60,5 +60,11 @@ def test_me_endpoint(client):
     assert r.json()["role"] == "platform-admin"
 
 
-def test_login_seed_not_implemented(client):
-    assert client.post("/auth/login").status_code == 501
+def test_login_missing_body_returns_422(client):
+    # /auth/login is now implemented by WP-A; no body → validation error 422
+    assert client.post("/auth/login").status_code == 422
+
+
+def test_login_bad_credentials_returns_401(client):
+    r = client.post("/auth/login", json={"username": "nobody", "password": "wrong"})
+    assert r.status_code == 401
