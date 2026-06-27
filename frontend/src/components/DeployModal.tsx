@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Game } from "../types";
+import { isValidServerName } from "../lib/validation";
 
 function suggestName(gameId: string): string {
   const suffix = Math.random().toString(36).slice(2, 6);
@@ -28,10 +29,7 @@ export function DeployModal({
     setVersion(game.versions[0]);
   }, [game.id]);
 
-  const nameValid = useMemo(
-    () => /^[a-z0-9]([-a-z0-9]{0,30}[a-z0-9])?$/.test(name),
-    [name]
-  );
+  const nameValid = useMemo(() => isValidServerName(name), [name]);
 
   return (
     <div

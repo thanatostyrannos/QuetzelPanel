@@ -2,6 +2,7 @@
 node_modules/
 frontend/dist/
 frontend/.vite/
+*.tsbuildinfo
 *.local
 
 # Python
@@ -13,6 +14,14 @@ venv/
 # Build artifacts
 *.tar
 *.log
+
+# Local tool binaries (e.g. k6.exe downloaded from GitHub releases)
+tools/
+
+# Test coverage
+frontend/coverage/
+.coverage
+.pytest_cache/
 
 # Editor / OS
 .DS_Store

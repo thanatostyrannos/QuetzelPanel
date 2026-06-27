@@ -61,3 +61,31 @@ Result: PASS (acceptance check: UI deploy→Running w/ address→delete, cluster
 Next: Persist mock state option; then real cluster: operator + CRD + Helm + install.sh
       once B1 (WSL/k3s) resolved. Optionally containerize (Dockerfiles + nginx) for parity.
 Open issues: B1 (cluster down); persistence is in-memory (resets on backend restart).
+
+## Iteration 3 — 2026-06-27 ~00:15
+Phase: Testing (user-directed) + backend operator logic (no deploy)
+Action: Added three test layers (TDD for new code) + the operator reconciler.
+  - backend pytest: catalog, models (name validation), MockProvider lifecycle
+    (injectable clock — small testability refactor), API CRUD via TestClient.
+  - operator (TDD, tests written first → red → green): manifests.py pure builders
+    (StatefulSet/Service/Secret, RCON-via-Secret, readiness probe, graceful
+    preStop, PVC, owner refs) and status.py (service_address, compute_phase).
+  - operator handlers.py (kopf reconciler) written + byte-compiled; NOT run (no
+    cluster). catalog.py loader reads deploy/catalog.json (exported from backend).
+  - frontend Vitest+RTL: validation (TDD-extracted lib/validation.ts), api client,
+    StatusPill, DeployModal, App deploy→delete integration.
+  - k6: smoke.js + api_load.js (browse + lifecycle scenarios, thresholds).
+Commands:
+  $ backend  pytest         → 35 passed
+  $ operator pytest         → 24 passed (17 manifests + 7 status)
+  $ frontend npm run test   → 30 passed (5 files)
+  $ frontend npm run build  → tsc + vite OK (33 modules)
+  $ k6 run k6/smoke.js      → checks 100%, http_req_failed 0%
+  $ k6 run k6/api_load.js   → 100,125 reqs, 0 failed, 144,833 checks 100%,
+                              http_req_duration p95=9.64ms, create p95=8.32ms,
+                              ~3,337 req/s — ALL thresholds passed
+Result: PASS (89 unit/integration tests green; k6 load green)
+Next: When B1 resolved — build images (nerdctl k8s.io), apply CRD+RBAC, run
+      operator, then exercise P1–P6 + DoD on the live cluster. Helm chart +
+      install.sh/uninstall.sh still to write.
+Open issues: B1 (cluster down); operator handlers.py unverified against a live API.

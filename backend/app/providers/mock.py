@@ -34,16 +34,26 @@ _NODE_IP = "192.168.127.2"
 class _Record:
     __slots__ = ("server", "created_monotonic", "rcon_password", "deleting_since")
 
-    def __init__(self, server: GameServer, rcon_password: str):
+    def __init__(self, server: GameServer, rcon_password: str, created: float):
         self.server = server
-        self.created_monotonic = time.monotonic()
+        self.created_monotonic = created
         self.rcon_password = rcon_password  # never serialized out
         self.deleting_since: float | None = None
 
 
 class MockProvider(Provider):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        clock=time.monotonic,
+        pending_until: float = _PENDING_UNTIL,
+        provisioning_until: float = _PROVISIONING_UNTIL,
+    ) -> None:
+        # clock + thresholds are injectable so the lifecycle is testable
+        # deterministically without sleeping.
         self._records: dict[str, _Record] = {}
+        self._clock = clock
+        self._pending_until = pending_until
+        self._provisioning_until = provisioning_until
 
     def _primary_port(self, game_id: str) -> int:
         g = catalog.get_game(game_id)
@@ -60,13 +70,13 @@ class MockProvider(Provider):
             srv.status.message = "Terminating: saving world and stopping container"
             return srv
 
-        age = time.monotonic() - rec.created_monotonic
-        if age < _PENDING_UNTIL:
+        age = self._clock() - rec.created_monotonic
+        if age < self._pending_until:
             srv.status.phase = "Pending"
             srv.status.ready = False
             srv.status.address = None
             srv.status.message = "Scheduling StatefulSet"
-        elif age < _PROVISIONING_UNTIL:
+        elif age < self._provisioning_until:
             srv.status.phase = "Provisioning"
             srv.status.ready = False
             srv.status.address = None
@@ -114,7 +124,11 @@ class MockProvider(Provider):
             status=GameServerStatus(phase="Pending", message="Accepted"),
             createdAt=datetime.now(timezone.utc).isoformat(),
         )
-        rec = _Record(server, rcon_password=secrets.token_urlsafe(18))
+        rec = _Record(
+            server,
+            rcon_password=secrets.token_urlsafe(18),
+            created=self._clock(),
+        )
         self._records[req.name] = rec
         return self._refresh(rec)
 

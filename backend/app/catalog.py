@@ -26,9 +26,19 @@ CATALOG: list[dict] = [
         "image": "itzg/minecraft-server:latest",
         "protocol": "tcp",
         "ports": [{"name": "game", "port": 25565, "protocol": "TCP"}],
-        "rcon": {"enabled": True, "port": 25575},
+        # rcon: passwordEnv/enableEnv tell the operator how to inject the
+        # generated Secret + enable RCON for THIS image (data-driven, no code).
+        "rcon": {
+            "enabled": True,
+            "port": 25575,
+            "passwordEnv": "RCON_PASSWORD",
+            "enableEnv": "ENABLE_RCON",
+        },
         "versions": ["1.21.1", "1.20.6", "1.20.4", "1.19.4"],
         "defaultEnv": {"EULA": "TRUE", "TYPE": "VANILLA"},
+        "versionEnv": "VERSION",            # version goes to env, not image tag
+        "dataPath": "/data",                # world volume mount
+        "stopCommand": "rcon-cli save-all && rcon-cli stop",  # graceful preStop
         "accent": "#5b8c3e",
         "icon": "⛏️",  # pickaxe
     },
@@ -45,6 +55,7 @@ CATALOG: list[dict] = [
         "rcon": {"enabled": False, "port": 0},
         "versions": ["stable", "public-test"],
         "defaultEnv": {"SERVER_NAME": "QuetzelPanel Valheim", "WORLD_NAME": "Midgard"},
+        "dataPath": "/config",
         "accent": "#3b6ea5",
         "icon": "\U0001f6e1️",  # shield
     },
@@ -58,6 +69,7 @@ CATALOG: list[dict] = [
         "rcon": {"enabled": False, "port": 0},
         "versions": ["latest", "1.4.4.9"],
         "defaultEnv": {"WORLD_SIZE": "2", "DIFFICULTY": "1"},
+        "dataPath": "/root/.local/share/Terraria/Worlds",
         "accent": "#9b6bce",
         "icon": "\U0001f333",  # tree
     },
@@ -68,9 +80,14 @@ CATALOG: list[dict] = [
         "image": "factoriotools/factorio:stable",
         "protocol": "udp",
         "ports": [{"name": "game", "port": 34197, "protocol": "UDP"}],
-        "rcon": {"enabled": True, "port": 27015},
+        "rcon": {
+            "enabled": True,
+            "port": 27015,
+            "passwordEnv": "RCON_PASSWORD",
+        },
         "versions": ["stable", "latest"],
         "defaultEnv": {},
+        "dataPath": "/factorio",
         "accent": "#d98a29",
         "icon": "⚙️",  # gear
     },

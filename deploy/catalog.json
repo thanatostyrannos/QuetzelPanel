@@ -1,0 +1,129 @@
+{
+  "games": [
+    {
+      "id": "minecraft",
+      "name": "Minecraft",
+      "description": "Java Edition survival/creative server (itzg).",
+      "image": "itzg/minecraft-server:latest",
+      "protocol": "tcp",
+      "ports": [
+        {
+          "name": "game",
+          "port": 25565,
+          "protocol": "TCP"
+        }
+      ],
+      "rcon": {
+        "enabled": true,
+        "port": 25575,
+        "passwordEnv": "RCON_PASSWORD",
+        "enableEnv": "ENABLE_RCON"
+      },
+      "versions": [
+        "1.21.1",
+        "1.20.6",
+        "1.20.4",
+        "1.19.4"
+      ],
+      "defaultEnv": {
+        "EULA": "TRUE",
+        "TYPE": "VANILLA"
+      },
+      "versionEnv": "VERSION",
+      "dataPath": "/data",
+      "stopCommand": "rcon-cli save-all && rcon-cli stop",
+      "accent": "#5b8c3e",
+      "icon": "\u26cf\ufe0f"
+    },
+    {
+      "id": "valheim",
+      "name": "Valheim",
+      "description": "Co-op Viking survival dedicated server (lloesche).",
+      "image": "lloesche/valheim-server:latest",
+      "protocol": "udp",
+      "ports": [
+        {
+          "name": "game",
+          "port": 2456,
+          "protocol": "UDP"
+        },
+        {
+          "name": "query",
+          "port": 2457,
+          "protocol": "UDP"
+        }
+      ],
+      "rcon": {
+        "enabled": false,
+        "port": 0
+      },
+      "versions": [
+        "stable",
+        "public-test"
+      ],
+      "defaultEnv": {
+        "SERVER_NAME": "QuetzelPanel Valheim",
+        "WORLD_NAME": "Midgard"
+      },
+      "dataPath": "/config",
+      "accent": "#3b6ea5",
+      "icon": "\ud83d\udee1\ufe0f"
+    },
+    {
+      "id": "terraria",
+      "name": "Terraria",
+      "description": "2D sandbox adventure dedicated server.",
+      "image": "ryshe/terraria:latest",
+      "protocol": "tcp",
+      "ports": [
+        {
+          "name": "game",
+          "port": 7777,
+          "protocol": "TCP"
+        }
+      ],
+      "rcon": {
+        "enabled": false,
+        "port": 0
+      },
+      "versions": [
+        "latest",
+        "1.4.4.9"
+      ],
+      "defaultEnv": {
+        "WORLD_SIZE": "2",
+        "DIFFICULTY": "1"
+      },
+      "dataPath": "/root/.local/share/Terraria/Worlds",
+      "accent": "#9b6bce",
+      "icon": "\ud83c\udf33"
+    },
+    {
+      "id": "factorio",
+      "name": "Factorio",
+      "description": "Automation & logistics multiplayer server.",
+      "image": "factoriotools/factorio:stable",
+      "protocol": "udp",
+      "ports": [
+        {
+          "name": "game",
+          "port": 34197,
+          "protocol": "UDP"
+        }
+      ],
+      "rcon": {
+        "enabled": true,
+        "port": 27015,
+        "passwordEnv": "RCON_PASSWORD"
+      },
+      "versions": [
+        "stable",
+        "latest"
+      ],
+      "defaultEnv": {},
+      "dataPath": "/factorio",
+      "accent": "#d98a29",
+      "icon": "\u2699\ufe0f"
+    }
+  ]
+}
