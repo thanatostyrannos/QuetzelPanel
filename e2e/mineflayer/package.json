@@ -4,7 +4,8 @@
   "type": "commonjs",
   "description": "E2E liveness proof: a mineflayer bot joins the deployed Minecraft server and walks around.",
   "scripts": {
-    "bot": "node bot.js"
+    "bot": "node bot.js",
+    "harness": "node harness.js"
   },
   "dependencies": {
     "mineflayer": "^4.23.0"
