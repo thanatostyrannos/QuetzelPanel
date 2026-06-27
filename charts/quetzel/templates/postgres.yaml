@@ -1,0 +1,105 @@
+{{- if and ((.Values.auth).enabled) ((.Values.postgres).enabled) }}
+# postgres.yaml — WP-A: in-cluster Postgres for enterprise identity/tenancy
+# storage. Gated on profile=enterprise (postgres.enabled=true).
+#
+# PRODUCTION NOTE: This is a single-replica Postgres with a PVC. For real
+# production use, substitute an external managed Postgres (Cloud SQL, RDS, etc.)
+# and leave postgres.enabled=false.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: quetzel-postgres-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.postgres.storageSize | default "2Gi" | quote }}
+  {{- if .Values.postgres.storageClass }}
+  storageClassName: {{ .Values.postgres.storageClass | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: quetzel-postgres-credentials
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  POSTGRES_DB: {{ .Values.postgres.database | default "quetzel" | quote }}
+  POSTGRES_USER: {{ .Values.postgres.username | default "quetzel" | quote }}
+  POSTGRES_PASSWORD: {{ required "postgres.password must be set when postgres.enabled=true" .Values.postgres.password | quote }}
+  # Full DSN for the backend
+  QUETZEL_DB_DSN: {{ printf "postgresql://%s:%s@quetzel-postgres:5432/%s"
+    (.Values.postgres.username | default "quetzel")
+    .Values.postgres.password
+    (.Values.postgres.database | default "quetzel") | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quetzel-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+    {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "quetzel.labels" . | nindent 8 }}
+        {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image | default "postgres:16-alpine" | quote }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: quetzel-postgres-credentials
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgres.username | default "quetzel" | quote }}]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: quetzel-postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quetzel-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "quetzel.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "quetzel.selectorLabels" (dict "ctx" . "component" "postgres") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+{{- end }}
