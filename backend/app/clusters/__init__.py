@@ -8,6 +8,8 @@ from .registry import (  # noqa: F401
     ClusterRef,
     ClusterRegistry,
     LocalClusterRegistry,
+    MockMultiClusterRegistry,
+    RemoteClusterRegistry,
     make_cluster_registry,
     provider_for_cluster,
 )
