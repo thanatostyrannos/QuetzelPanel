@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 
 from .store import InMemoryUserStore, User, UserStore  # noqa: F401
+from ..auth.bootstrap import bootstrap_admin  # noqa: F401  (re-export for lead wiring)
 
 
 def make_user_store() -> UserStore:
