@@ -87,9 +87,12 @@ start_backend_pf() {
 # ----------------------------------------------------------------------------- capability probes
 CAP_AUTH=0 CAP_SIZING=0
 probe_caps() {
-  # auth present if /auth/login is implemented (not 501)
-  api POST /auth/login '{"username":"_probe_","password":"_"}' >/dev/null
-  [ "$API_CODE" != "501" ] && [ "$API_CODE" != "404" ] && CAP_AUTH=1
+  # auth is ENFORCED (not just implemented) iff an unauthenticated /servers is
+  # rejected. In permissive/mock deploys it returns 200 -> CAP_AUTH=0 (seed +
+  # tenancy skipped). With JWT_SECRET set it returns 401 -> CAP_AUTH=1.
+  JWT=""
+  api GET /servers >/dev/null
+  [ "$API_CODE" = "401" ] && CAP_AUTH=1
   # sizing present if the operator's compute_resources is implemented
   if python_compute 2 >/dev/null 2>&1; then CAP_SIZING=1; fi
   note "capabilities: auth=$CAP_AUTH sizing=$CAP_SIZING (smoke=$SMOKE require_all=$REQUIRE_ALL)"
@@ -154,7 +157,9 @@ reconcile_servers() {
       # ONLINE_MODE=FALSE so offline mineflayer bots can join (no Mojang auth).
       # FLAT world = instant gen + flat unobstructed ground so bots walk freely
       # and deterministically (world type is irrelevant to the size/tenancy proof).
-      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"ONLINE_MODE\":\"FALSE\",\"LEVEL_TYPE\":\"FLAT\",\"GENERATE_STRUCTURES\":\"false\",\"SPAWN_PROTECTION\":\"0\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"700M\",\"MAX_PLAYERS\":\"$mp\"}}"
+      # Heap (1024M) sits well under the smallest computed limit (1792Mi) so the
+      # JVM + Paper overhead never OOM-CrashLoops the pod.
+      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"ONLINE_MODE\":\"FALSE\",\"LEVEL_TYPE\":\"FLAT\",\"GENERATE_STRUCTURES\":\"false\",\"SPAWN_PROTECTION\":\"0\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"1024M\",\"MAX_PLAYERS\":\"$mp\"}}"
       api POST /servers "{\"name\":\"$server\",\"game\":\"minecraft\",\"options\":$opts}" >/dev/null
       if [ "$API_CODE" = "201" ]; then echo "   create $server (maxPlayers=$mp, customer=$cid)"; else echo "   create $server -> HTTP $API_CODE"; fi
     fi
