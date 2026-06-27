@@ -71,6 +71,22 @@ rules:
   - apiGroups: ["quetzel.gg"]
     resources: ["gameservers/status"]
     verbs: ["get"]
+  # WP-C: metrics-server pod metrics (CPU/memory % of limits)
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  # WP-C: node list for cluster health (node conditions)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["list"]
+  # WP-C: pods in namespace for cluster health aggregation
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  # WP-C: kubelet summary stats for disk % (nodes/proxy subresource)
+  - apiGroups: [""]
+    resources: ["nodes/proxy"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
