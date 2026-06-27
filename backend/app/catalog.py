@@ -48,6 +48,7 @@ CATALOG: list[dict] = [
         "versions": ["1.21.1", "1.20.6", "1.20.4", "1.19.4"],
         "defaultEnv": {"EULA": "TRUE", "TYPE": "VANILLA"},
         "versionEnv": "VERSION",            # version goes to env, not image tag
+        "playersEnv": "MAX_PLAYERS",        # WP-B: operator sets this from spec.maxPlayers
         "dataPath": "/data",                # world volume mount
         "stopCommand": "rcon-cli save-all && rcon-cli stop",  # graceful preStop
         "accent": "#5b8c3e",
