@@ -149,3 +149,42 @@ Result: PASS — DoD #1 (install), #3 (deploy->Running+address), #4 (connect: a
 Next: remaining DoD — #2 verify UI on cluster, #5 delete via UI/API + GC, #6 second
   game (Valheim), #7 pod-kill self-heal + PVC persistence, #8 uninstall.
 Open issues: kopf cluster-discovery warnings are benign (namespaced watch works).
+
+## Iteration 6 — 2026-06-27 (Phase 0: enterprise foundation — contracts, CI/CD, e2e scaffold)
+Phase: P0 (orchestration foundation; lead-owned, no subagents yet)
+Branch: enterprise/foundation (PR -> main). Trunk already main + pushed to GitHub
+  (thanatostyrannos/QuetzelPanel, PUBLIC). gh ADMIN + repo/workflow scopes; live k3s
+  v1.36.2 up (docker runtime); helm v4, node 24 present.
+Action (small commits):
+  1. CI/CD: .github/workflows/ci.yml (backend/operator/frontend tests, helm lint+template
+     local+enterprise, image builds, k3d e2e-smoke) + release.yml (GHCR images + OCI chart
+     + GitHub Release on merge). Chart images default to ghcr.io/<owner>/quetzel-*:<appVersion>
+     via a quetzel.image helper; Chart 0.1.0 -> 0.2.0; install.sh gains --local/--skip-build
+     (default = published images).
+  2. Seams: backend main.py -> APIRouters (games, servers) behind app/deps.get_provider;
+     frontend api.ts -> src/api/* and types.ts -> src/types/*. No behavior change.
+  3. Contracts (interfaces + mock impls + NotImplemented real stubs + tests): auth (Role,
+     current_user, require_role, UserStore), tenancy (Customer, scope_for, CUSTOMER_LABEL,
+     CustomerStore), metrics (MetricsProvider + synthetic + ServerMetrics/ClusterHealth),
+     clusters (ClusterRegistry + local), sizing (Sizing schema, GameServerSpec.maxPlayers
+     /customer, operator compute_resources stub + xfail), CRD maxPlayers/customer, catalog
+     per-game sizing; seed routers auth/metrics/clusters/customers mounted; frontend types
+     + api clients.
+  4. e2e: walk.js + pooled harness.js (N bots x M servers); verify.sh finish line
+     (reconcile-to-desired, 4 capability-aware gates, bounded, --smoke/--reset/--require-all).
+Commands (real output):
+  $ cd backend && .venv/Scripts/python -m pytest      -> 57 passed in 0.40s
+  $ cd operator && <backend venv>/python -m pytest    -> 27 passed, 1 xfailed in 0.10s
+  $ cd frontend && npx vitest run                      -> 33 passed (6 files)
+  $ cd frontend && npm run build                       -> tsc + vite OK (36 modules)
+  $ helm lint charts/quetzel                           -> 0 failed (icon INFO only)
+  $ helm template ... (local + values-enterprise)      -> render OK; CRD has maxPlayers/customer
+  $ bash -n e2e/verify.sh                              -> syntax OK
+  $ QUETZEL_API=<mock> LIVENESS_TIMEOUT=3 e2e/verify.sh --smoke
+      capabilities: auth=0 sizing=0; reconcile created acme-mc1; FAIL liveness (no pod,
+      expected pre-WP); sizing/tenancy SKIP; connectivity SKIP; EXIT=1  (fails meaningfully)
+Result: PASS (foundation green at every layer; e2e scaffold fails meaningfully by design)
+Next: open PR enterprise/foundation -> main, let ci.yml register checks, enable branch
+  protection requiring them, merge (release.yml publishes artifacts), THEN fan out WP-A/B/C.
+Open issues: e2e-smoke job not yet a required check (becomes required before Phase 3);
+  GHCR package visibility to be made public after first release for pull-without-auth.
