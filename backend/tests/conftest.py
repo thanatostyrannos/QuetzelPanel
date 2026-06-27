@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app.deps import get_provider
 from app.providers.mock import MockProvider
 
 
@@ -42,8 +43,13 @@ def provider() -> MockProvider:
 
 
 @pytest.fixture
-def client(monkeypatch):
-    # Each test gets a clean in-memory provider behind the real FastAPI app.
-    monkeypatch.setattr(main, "provider", MockProvider())
-    with TestClient(main.app) as c:
-        yield c
+def client():
+    # Each test gets a clean in-memory provider behind the real FastAPI app,
+    # injected via FastAPI's dependency override (idiomatic seam).
+    mock = MockProvider()
+    main.app.dependency_overrides[get_provider] = lambda: mock
+    try:
+        with TestClient(main.app) as c:
+            yield c
+    finally:
+        main.app.dependency_overrides.clear()
