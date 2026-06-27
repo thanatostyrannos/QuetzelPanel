@@ -30,13 +30,32 @@ build_with_docker() {
   docker build -t "quetzel/frontend:${TAG}" -f frontend/Dockerfile .
 }
 
-if command -v nerdctl >/dev/null 2>&1; then
-  build_with_nerdctl
-elif command -v docker >/dev/null 2>&1; then
-  build_with_docker
-else
-  echo "ERROR: neither nerdctl nor docker found on PATH." >&2
-  exit 1
-fi
+# Pick the engine that shares an image store with k3s, based on the node runtime:
+#   docker://...     -> Rancher Desktop dockerd mode: `docker build` is visible to k3s
+#   containerd://... -> containerd mode: build into the k8s.io namespace via nerdctl
+RUNTIME="$(kubectl get nodes -o jsonpath='{.items[0].status.nodeInfo.containerRuntimeVersion}' 2>/dev/null || true)"
+echo ">> k3s node runtime: ${RUNTIME:-unknown}"
+
+case "$RUNTIME" in
+  docker://*)
+    command -v docker >/dev/null 2>&1 || { echo "ERROR: dockerd-mode cluster but no docker CLI." >&2; exit 1; }
+    build_with_docker
+    ;;
+  containerd://*)
+    command -v nerdctl >/dev/null 2>&1 || { echo "ERROR: containerd-mode cluster but no nerdctl CLI." >&2; exit 1; }
+    build_with_nerdctl
+    ;;
+  *)
+    # Unknown/unreachable runtime — prefer nerdctl(k8s.io), fall back to docker.
+    if command -v nerdctl >/dev/null 2>&1 && nerdctl --namespace "$IMG_NS" images >/dev/null 2>&1; then
+      build_with_nerdctl
+    elif command -v docker >/dev/null 2>&1; then
+      build_with_docker
+    else
+      echo "ERROR: no usable container engine found." >&2
+      exit 1
+    fi
+    ;;
+esac
 
 echo ">> done: quetzel/{operator,backend,frontend}:${TAG}"

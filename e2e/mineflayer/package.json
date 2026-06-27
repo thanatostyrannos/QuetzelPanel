@@ -1,0 +1,12 @@
+{
+  "name": "quetzel-mineflayer-e2e",
+  "private": true,
+  "type": "commonjs",
+  "description": "E2E liveness proof: a mineflayer bot joins the deployed Minecraft server and walks around.",
+  "scripts": {
+    "bot": "node bot.js"
+  },
+  "dependencies": {
+    "mineflayer": "^4.23.0"
+  }
+}

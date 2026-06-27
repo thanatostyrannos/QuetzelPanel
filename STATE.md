@@ -118,3 +118,34 @@ Result: PASS (acceptance check: chart lints + renders valid manifests, both prof
 Next: Resolve B1, then ./install.sh on the live cluster and run DoD P0–P6.
 Open issues: B1 (cluster down) — install.sh/build-images.sh/handlers.py not yet
       exercised against a real cluster (offline-validated only).
+
+## Iteration 5 — 2026-06-27 ~07:30  *** B1 RESOLVED — LIVE CLUSTER ***
+Phase: P0–P4 on the live cluster + mineflayer agent (user-directed goal)
+Context: Rancher Desktop back up. k3s v1.36.2, node Ready, local-path default,
+  node IP 192.168.127.2. Runtime is docker://29.1.3 (DOCKERD mode, not containerd)
+  -> docker-built images are visible to k3s; updated build-images.sh to detect the
+  node runtime and pick docker vs nerdctl accordingly.
+Action: Built 3 images (docker), ./install.sh, deployed Minecraft via the API,
+  ran a mineflayer bot. Found + fixed TWO real bugs only a live deploy surfaces:
+   BUG1: operator CrashLoop 'No module named quetzel_operator' — kopf console
+         script doesn't add cwd to sys.path. Fix: PYTHONPATH=/app (chart env +
+         Dockerfile).
+   BUG2: GameServer stuck Provisioning despite ready pod — service_address read
+         camelCase 'loadBalancer' but the k8s client .to_dict() returns snake_case
+         'load_balancer'. Fix: accept both + regression test (operator now 26).
+Commands (real output):
+  $ ./install.sh (SKIP_BUILD=1) → 3 deployments rolled out; printed URL
+  $ POST /servers mc-bot (provider=K8sProvider) → CR created, phase Pending
+  $ operator logs → created secret/service/statefulset/pdb; reconcile succeeded
+  $ kubectl get gs mc-bot → Running, ADDRESS 192.168.127.2:25565, READY true
+  $ kubectl get svc mc-bot → LoadBalancer EXTERNAL-IP 192.168.127.2, 25565+25575
+  $ minecraft logs → Done (7.614s)! ; RCON running on 0.0.0.0:25575
+  $ node e2e/mineflayer/bot.js (port-forward 25565):
+       SPAWNED server version=1.20.4 ; players=QuetzelBot
+       start (7.5,-60,0.5) -> end (30.2,-60,56.0) ; walked 59.95 blocks
+       PASS: bot joined and walked around the deployed server.
+Result: PASS — DoD #1 (install), #3 (deploy->Running+address), #4 (connect: a
+  mineflayer agent joined and walked ~60 blocks). Real game pod from the operator.
+Next: remaining DoD — #2 verify UI on cluster, #5 delete via UI/API + GC, #6 second
+  game (Valheim), #7 pod-kill self-heal + PVC persistence, #8 uninstall.
+Open issues: kopf cluster-discovery warnings are benign (namespaced watch works).

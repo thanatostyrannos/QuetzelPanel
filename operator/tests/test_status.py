@@ -16,8 +16,15 @@ def test_service_address_falls_back_to_hostname():
     assert st.service_address(svc, 2456) == "lb.local:2456"
 
 
+def test_service_address_handles_client_snake_case():
+    # kubernetes client .to_dict() returns load_balancer, not loadBalancer.
+    svc = {"status": {"load_balancer": {"ingress": [{"ip": "192.168.127.2"}]}}}
+    assert st.service_address(svc, 25565) == "192.168.127.2:25565"
+
+
 def test_service_address_none_until_assigned():
     assert st.service_address({"status": {"loadBalancer": {}}}, 25565) is None
+    assert st.service_address({"status": {"load_balancer": {}}}, 25565) is None
     assert st.service_address({}, 25565) is None
 
 

@@ -7,10 +7,14 @@ from __future__ import annotations
 
 
 def service_address(svc: dict, port: int) -> str | None:
-    """Return 'host:port' once ServiceLB assigns an ingress IP/hostname, else None."""
-    ingress = (
-        (svc or {}).get("status", {}).get("loadBalancer", {}).get("ingress") or []
-    )
+    """Return 'host:port' once ServiceLB assigns an ingress IP/hostname, else None.
+
+    Accepts both the raw API JSON shape ('loadBalancer') and the Python client's
+    .to_dict() shape ('load_balancer') — the live reconciler feeds in the latter.
+    """
+    status = (svc or {}).get("status") or {}
+    lb = status.get("loadBalancer") or status.get("load_balancer") or {}
+    ingress = lb.get("ingress") or []
     if not ingress:
         return None
     host = ingress[0].get("ip") or ingress[0].get("hostname")
