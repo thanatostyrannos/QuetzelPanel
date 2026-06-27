@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Game } from "../types";
 import { isValidServerName } from "../lib/validation";
+import { computeResources, fmtMemory, fmtCpu } from "../lib/sizing";
 
 function suggestName(gameId: string): string {
   const suffix = Math.random().toString(36).slice(2, 6);
@@ -23,13 +24,32 @@ export function DeployModal({
   const [name, setName] = useState(() => suggestName(game.id));
   const [version, setVersion] = useState(game.versions[0]);
   const [storageSize, setStorageSize] = useState("2Gi");
+  // WP-B: player count — only shown when the game has a sizing block
+  const [maxPlayers, setMaxPlayers] = useState<number>(
+    game.sizing?.maxPlayers ?? 20
+  );
 
   useEffect(() => {
     setName(suggestName(game.id));
     setVersion(game.versions[0]);
+    setMaxPlayers(game.sizing?.maxPlayers ?? 20);
   }, [game.id]);
 
   const nameValid = useMemo(() => isValidServerName(name), [name]);
+
+  // WP-B: live resource preview derived from the client-side formula
+  const resourcePreview = useMemo(() => {
+    if (!game.sizing) return null;
+    return computeResources(game.sizing, maxPlayers);
+  }, [game.sizing, maxPlayers]);
+
+  const handleMaxPlayersChange = (v: string) => {
+    const n = parseInt(v, 10);
+    if (!isNaN(n)) {
+      const clamped = Math.max(1, Math.min(n, game.sizing?.maxPlayers ?? n));
+      setMaxPlayers(clamped);
+    }
+  };
 
   return (
     <div
@@ -105,6 +125,51 @@ export function DeployModal({
             </label>
           </div>
 
+          {/* WP-B: max-players control + live resource preview */}
+          {game.sizing && (
+            <div className="flex flex-col gap-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-semibold uppercase tracking-wide text-white/50">
+                  Max players
+                  <span className="ml-1 font-normal normal-case text-white/30">
+                    (1–{game.sizing.maxPlayers})
+                  </span>
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={game.sizing.maxPlayers}
+                  value={maxPlayers}
+                  onChange={(e) => handleMaxPlayersChange(e.target.value)}
+                  aria-label="Max players"
+                  className="rounded-lg border border-white/10 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-brand-500"
+                />
+              </label>
+              {resourcePreview && (
+                <div
+                  className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/5 px-3 py-2 text-xs text-white/60"
+                  aria-label="Resource preview"
+                >
+                  <span className="font-semibold text-white/40 uppercase tracking-wide">
+                    Resources
+                  </span>
+                  <span>
+                    CPU{" "}
+                    <span className="font-mono text-white/80">
+                      {fmtCpu(resourcePreview.requests.cpu)}
+                    </span>
+                  </span>
+                  <span>
+                    RAM{" "}
+                    <span className="font-mono text-white/80">
+                      {fmtMemory(resourcePreview.requests.memory)}
+                    </span>
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           {game.id === "minecraft" && (
             <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-xs text-amber-200/80">
               By deploying you accept the Minecraft EULA (<code>EULA=TRUE</code>).
@@ -132,9 +197,11 @@ export function DeployModal({
             </button>
             <button
               disabled={!nameValid || busy}
-              onClick={() =>
-                onSubmit({ name, game: game.id, options: { version, storageSize } })
-              }
+              onClick={() => {
+                const options: Record<string, unknown> = { version, storageSize };
+                if (game.sizing) options.maxPlayers = maxPlayers;
+                onSubmit({ name, game: game.id, options });
+              }}
               className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-ink-950 transition active:scale-[0.98] disabled:opacity-40"
               style={{ background: `linear-gradient(135deg, ${game.accent}, ${game.accent}cc)` }}
             >

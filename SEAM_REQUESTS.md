@@ -1,61 +1,47 @@
-# Seam Requests
+# SEAM_REQUESTS — cross-work-package seam edits
 
-Requests from Work Packages for changes to lead-owned files.
+This file documents changes WPs need in lead-owned or shared files. The lead
+applies/reviews these during integration. (Consumed and removed once all WPs land.)
 
-## WP-C
+---
 
-### 1. App.tsx — surface the Metrics/ClusterHealth panels in the UI
+## WP-B — player-based game sizing
 
-**Request**: Add import and render of `MetricsPanel` and `ClusterHealthPanel` into `App.tsx`.
+### `backend/app/providers/k8s.py`
+In `K8sProvider.create_server`, after building `spec`, if `opts.get("maxPlayers")`
+is not None, cast to int and add it as `spec["maxPlayers"]` (mirrors MockProvider).
+Without this, `maxPlayers` was dropped and the operator could not compute
+player-based resources. **Applied by WP-B on its branch (shared file).**
 
-**Why**: WP-C owns `MetricsPanel` (per-server gauges) and `ClusterHealthPanel`
-(cluster-wide status). These components are fully implemented and tested.
-Without wiring them into `App.tsx` the UI doesn't surface observability data
-to end users even though the backend endpoints are live.
+### `operator/quetzel_operator/handlers.py`
+No change required — the kopf handler already passes the full spec into
+`build_statefulset`, so `spec.maxPlayers` flows through.
 
-**Suggested placement**:
-- `ClusterHealthPanel` — in a new "Cluster" section above or below "My Servers"
-  (it uses its own polling; no extra props needed).
-- `MetricsPanel` — inside each `ServerCard` row (or directly in the `servers.map`
-  loop), passing `serverName={s.name}`. The panel polls independently; it needs
-  no extra state.
+---
 
-**Imports to add**:
-```ts
-import { MetricsPanel } from "./components/MetricsPanel";
-import { ClusterHealthPanel } from "./components/ClusterHealthPanel";
-```
+## WP-C — observability
 
-**Example render for ClusterHealthPanel** (after the "My Servers" section):
-```tsx
-<section className="mt-6">
-  <ClusterHealthPanel />
-</section>
-```
+### 1. `frontend/src/App.tsx` — surface MetricsPanel + ClusterHealthPanel
+- `import { MetricsPanel } from "./components/MetricsPanel";`
+- `import { ClusterHealthPanel } from "./components/ClusterHealthPanel";`
+- Render `<MetricsPanel serverName={s.name} />` inside the servers map, and a
+  `<ClusterHealthPanel />` section near "My Servers". (Lead shell pass.)
 
-**Example render for MetricsPanel** (inside the servers.map, after StatusPill):
-```tsx
-<MetricsPanel serverName={s.name} />
-```
+### 2. `charts/quetzel/values.yaml` — optional `metrics.enabled` toggle (nice-to-have)
+Current unconditional RBAC is safe; toggle is optional.
 
-### 2. values.yaml — optional metrics toggle (nice-to-have)
+---
 
-**Request**: Add a `metrics.enabled` boolean (default `true`) so operators can
-disable the metrics-server RBAC grants and kubelet proxy calls in environments
-where metrics-server is not installed.
+## WP-A — authentication
 
-**Suggested addition to `values.yaml`**:
-```yaml
-metrics:
-  enabled: true   # set false if metrics-server is not installed
-```
-
-**Usage in rbac.yaml** (conditional block around the WP-C rules):
-```yaml
-{{- if .Values.metrics.enabled }}
-  - apiGroups: ["metrics.k8s.io"]
-    ...
-{{- end }}
-```
-
-This is a nice-to-have; the current unconditional RBAC is safe and correct.
+1. **`backend/app/main.py` lifespan** — `jwt_config_from_env()` +
+   `set_token_verifier(build_token_verifier(cfg))` before yield; clear after.
+   (No-op verifier when `JWT_SECRET` absent → mock/dev stays permissive.)
+2. **`backend/app/routers/servers.py`** — add `user: AuthContext = Depends(current_user)`
+   to list/create/delete endpoints.
+3. **`charts/quetzel/values.yaml`** — add `auth:` (enabled/jwtSecret/google…) and
+   `postgres:` (enabled/password…) stanzas with safe `false`/`""` defaults.
+4. **`charts/quetzel/templates/backend.yaml`** — `envFrom` the `quetzel-auth` and
+   `quetzel-postgres-credentials` secrets when enabled; set `QUETZEL_USERSTORE`.
+5. **`frontend/src/App.tsx`** — gate the app behind `useAuth().isAuthenticated`
+   (LoginPage), add user badge + logout to the header.
