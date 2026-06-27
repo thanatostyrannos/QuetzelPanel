@@ -151,7 +151,8 @@ reconcile_servers() {
       echo "   reuse $server"
     else
       local opts
-      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"700M\",\"MAX_PLAYERS\":\"$mp\"}}"
+      # ONLINE_MODE=FALSE so offline mineflayer bots can join (no Mojang auth).
+      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"ONLINE_MODE\":\"FALSE\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"700M\",\"MAX_PLAYERS\":\"$mp\"}}"
       api POST /servers "{\"name\":\"$server\",\"game\":\"minecraft\",\"options\":$opts}" >/dev/null
       if [ "$API_CODE" = "201" ]; then echo "   create $server (maxPlayers=$mp, customer=$cid)"; else echo "   create $server -> HTTP $API_CODE"; fi
     fi
