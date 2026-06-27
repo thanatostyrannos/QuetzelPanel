@@ -42,18 +42,20 @@ async function joinAndWalk({
       clearTimeout(timer);
       try {
         // On a freshly-generated world the spawn chunks may not be loaded yet;
-        // the server rejects movement until they are. Wait for them (bounded),
-        // then let the bot settle on the ground before walking.
+        // the server rejects movement until they arrive. Best-effort wait (its
+        // own 10s timeout rejection is non-fatal), then poll-until-moved within a
+        // generous deadline so slow servers just take longer, never falsely FAIL.
         if (typeof bot.waitForChunksToLoad === "function") {
-          await Promise.race([bot.waitForChunksToLoad(), sleep(25000)]);
+          try { await bot.waitForChunksToLoad(); } catch (_) {}
         }
-        await sleep(1500);
+        await sleep(1000);
         const start = bot.entity.position.clone();
         log(`${username}: spawned on ${bot.version} at (${start.x.toFixed(1)},${start.y.toFixed(1)},${start.z.toFixed(1)})`);
         bot.setControlState("sprint", true);
         bot.setControlState("forward", true);
-        const deadline = Date.now() + walkMs;
+        const deadline = Date.now() + Math.max(walkMs, 30000); // room for slow chunk delivery
         let yaw = bot.entity.yaw;
+        let moved = 0;
         while (Date.now() < deadline) {
           yaw += (Math.random() - 0.5) * 1.2;
           await bot.look(yaw, 0, false);
@@ -61,18 +63,19 @@ async function joinAndWalk({
           await sleep(250);
           bot.setControlState("jump", false);
           await sleep(450);
+          moved = dist(start, bot.entity.position);
+          if (moved >= minBlocks) break; // moved enough -> done early
         }
         bot.setControlState("forward", false);
         bot.setControlState("sprint", false);
-        await sleep(400);
-        const end = bot.entity.position.clone();
-        const moved = dist(start, end);
+        await sleep(300);
+        moved = dist(start, bot.entity.position.clone());
         const ver = bot.version;
         try { bot.quit(); } catch (_) {}
         if (moved < minBlocks) {
           return finish(reject, new Error(`${username}: barely moved (${moved.toFixed(2)} blocks)`));
         }
-        finish(resolve, { username, moved, version: ver, start, end });
+        finish(resolve, { username, moved, version: ver, start, end: bot.entity.position });
       } catch (e) {
         try { bot.quit(); } catch (_) {}
         finish(reject, new Error(`${username}: ${e && e.message ? e.message : e}`));
