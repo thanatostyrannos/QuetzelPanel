@@ -1,0 +1,171 @@
+name: CI
+
+# Gate every PR into main, and give fast feedback on the enterprise/* work branches.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [enterprise/**]
+
+# Newer pushes supersede in-flight runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: backend-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install deps
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx
+      - name: Run pytest
+        working-directory: backend
+        run: python -m pytest
+
+  operator-tests:
+    name: operator-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: operator/requirements.txt
+      - name: Install deps
+        working-directory: operator
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run pytest
+        working-directory: operator
+        run: python -m pytest
+
+  frontend-tests:
+    name: frontend-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install deps
+        working-directory: frontend
+        run: npm ci
+      - name: Test
+        working-directory: frontend
+        run: npm run test
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  helm:
+    name: helm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+      - name: helm lint
+        run: helm lint charts/quetzel
+      - name: helm template (local profile)
+        run: helm template quetzel charts/quetzel --set profile=local > /tmp/render-local.yaml
+      - name: helm template (enterprise/prod profile)
+        run: helm template quetzel charts/quetzel -f charts/quetzel/values-enterprise.yaml > /tmp/render-enterprise.yaml
+      - name: Assert renders are non-empty
+        run: |
+          test -s /tmp/render-local.yaml || { echo "local render empty"; exit 1; }
+          test -s /tmp/render-enterprise.yaml || { echo "enterprise render empty"; exit 1; }
+
+  images-build:
+    name: images-build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [operator, backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.component }} image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.component }}/Dockerfile
+          push: false
+          load: false
+          tags: quetzel/${{ matrix.component }}:ci
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+  # Encouraged, not (yet) required: spins an ephemeral k3d cluster, installs the
+  # chart, and runs the scaled-down 1x1x1 form of the live finish-line harness
+  # (e2e/verify.sh --smoke). The harness is capability-aware: it asserts only the
+  # gates whose features are present, so it stays green as the WPs land and tightens
+  # automatically once auth/sizing/tenancy ship. The full 2x2x8 run is Phase 3 on
+  # the live cluster. Becomes a required check before Phase 3.
+  e2e-smoke:
+    name: e2e-smoke
+    runs-on: ubuntu-latest
+    # Heavy (real game pod); only on PRs into main, where integration matters.
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install k3d
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/v5.7.4/install.sh | TAG=v5.7.4 bash
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+      - name: Create k3d cluster
+        run: |
+          k3d cluster create quetzel-ci \
+            --servers 1 --agents 0 \
+            --wait --timeout 180s
+          kubectl wait --for=condition=Ready nodes --all --timeout=120s
+      - name: Build images
+        run: |
+          docker build -t quetzel/operator:ci -f operator/Dockerfile .
+          docker build -t quetzel/backend:ci  -f backend/Dockerfile .
+          docker build -t quetzel/frontend:ci -f frontend/Dockerfile .
+      - name: Import images into k3d
+        run: |
+          k3d image import quetzel/operator:ci quetzel/backend:ci quetzel/frontend:ci -c quetzel-ci
+      - name: Install chart
+        run: |
+          ./install.sh --local --skip-build || INSTALL_FAILED=1
+          # install.sh expects TAG-based local images; align tags it sets.
+        env:
+          TAG: ci
+      - name: Run e2e smoke (1x1x1)
+        run: bash e2e/verify.sh --smoke
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl -n quetzel get all || true
+          kubectl -n quetzel get gameservers || true
+          kubectl -n quetzel describe pods || true
+      - name: Teardown
+        if: always()
+        run: k3d cluster delete quetzel-ci || true

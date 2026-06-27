@@ -9,10 +9,15 @@ crd:
   install: true
 
 image:
+  # Default registry for published images. The per-component image defaults to
+  # {registry}/quetzel-<component>:{Chart.appVersion} via the quetzel.image helper.
+  registry: ghcr.io/thanatostyrannos
   pullPolicy: IfNotPresent
 
 operator:
-  image: quetzel/operator:dev
+  # Blank => published GHCR image at appVersion. install.sh --local sets the local
+  # quetzel/operator:<tag> build instead (offline dev / CI on a kind/k3d cluster).
+  image: ""
   # Empty => watch the release namespace. Set to watch elsewhere.
   watchNamespace: ""
   resources:
@@ -20,7 +25,7 @@ operator:
     limits: { cpu: "500m", memory: "256Mi" }
 
 backend:
-  image: quetzel/backend:dev
+  image: ""
   replicas: 1
   provider: k8s            # in-cluster talks to real GameServer CRs
   service:
@@ -30,7 +35,7 @@ backend:
     limits: { cpu: "500m", memory: "256Mi" }
 
 frontend:
-  image: quetzel/frontend:dev
+  image: ""
   replicas: 1
   service:
     port: 80

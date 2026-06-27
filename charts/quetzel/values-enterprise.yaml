@@ -1,0 +1,30 @@
+# Enterprise / prod profile overrides.
+#   helm install quetzel charts/quetzel -f charts/quetzel/values-enterprise.yaml
+#
+# This profile targets a real multi-node cluster: published GHCR images (no local
+# build), persistent identity/tenancy storage (Postgres, added by WP-A), and the
+# prod prerequisite toggles. Local dev keeps using the default values.yaml.
+profile: enterprise
+
+backend:
+  replicas: 2
+  provider: k8s
+
+operator:
+  resources:
+    requests: { cpu: "100m", memory: "192Mi" }
+    limits: { cpu: "1", memory: "512Mi" }
+
+# Prod prerequisites — installed/managed out-of-band (install.sh PROFILE=prod),
+# declared here so the enterprise render is explicit about what it expects.
+prod:
+  metallb:
+    enabled: false
+  longhorn:
+    enabled: false
+  ingressNginx:
+    enabled: false
+  certManager:
+    enabled: false
+  monitoring:
+    enabled: false

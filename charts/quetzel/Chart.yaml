@@ -2,12 +2,12 @@ apiVersion: v2
 name: quetzel
 description: QuetzelPanel — one-click game-server hosting platform for Kubernetes (CRD + operator + API + UI)
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.2.0"
 keywords:
   - games
   - operator
   - gameserver
-home: https://github.com/solarhawk/QuetzelPanel
+home: https://github.com/thanatostyrannos/QuetzelPanel
 maintainers:
   - name: QuetzelPanel

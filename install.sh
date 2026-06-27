@@ -2,9 +2,14 @@
 # QuetzelPanel installer — idempotent. Run from WSL2 (or any shell with kubectl/
 # helm and a container engine on PATH) against a running Rancher Desktop / k3s.
 #
-#   ./install.sh                 # local profile (k3s bundled LB/storage/ingress)
+#   ./install.sh                 # deploy PUBLISHED GHCR images (chart appVersion)
+#   ./install.sh --local         # build local quetzel/*:<tag> images and deploy those
+#   ./install.sh --local --skip-build   # reuse already-built local images
 #   PROFILE=prod ./install.sh    # also bootstrap MetalLB/Longhorn/etc (stub)
-#   SKIP_BUILD=1 ./install.sh    # reuse existing images
+#
+# Image source:
+#   default            -> chart's GHCR defaults: ghcr.io/<owner>/quetzel-*:<appVersion>
+#   --local / LOCAL_IMAGES=1 -> local images quetzel/operator|backend|frontend:<TAG>
 #
 # Re-running converges with no drift (helm upgrade --install + cached image builds).
 set -euo pipefail
@@ -17,6 +22,21 @@ NAMESPACE="${NAMESPACE:-quetzel}"
 CHART="charts/quetzel"
 PROFILE="${PROFILE:-local}"
 TAG="${TAG:-dev}"
+LOCAL_IMAGES="${LOCAL_IMAGES:-0}"
+
+# --- flags -------------------------------------------------------------------
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --local)      LOCAL_IMAGES=1 ;;
+    --skip-build) SKIP_BUILD=1 ;;
+    --profile)    PROFILE="$2"; shift ;;
+    --tag)        TAG="$2"; shift ;;
+    -h|--help)
+      sed -n '2,18p' "$0"; exit 0 ;;
+    *) echo "unknown flag: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
 
 log()  { printf '\033[1;36m>> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m!! %s\033[0m\n' "$*"; }
@@ -59,12 +79,22 @@ else
   warn "python3 not found; using committed charts/quetzel/files/catalog.json"
 fi
 
-# 5. build images into the k3s-visible store ----------------------------------
-if [ "${SKIP_BUILD:-0}" != "1" ]; then
-  log "building images (TAG=$TAG)"
-  TAG="$TAG" ./build-images.sh
+# 5. build images into the k3s-visible store (local mode only) ----------------
+IMAGE_ARGS=()
+if [ "$LOCAL_IMAGES" = "1" ]; then
+  if [ "${SKIP_BUILD:-0}" != "1" ]; then
+    log "building local images (TAG=$TAG)"
+    TAG="$TAG" ./build-images.sh
+  else
+    log "SKIP_BUILD=1 — reusing existing local images"
+  fi
+  IMAGE_ARGS=(
+    --set operator.image="quetzel/operator:${TAG}"
+    --set backend.image="quetzel/backend:${TAG}"
+    --set frontend.image="quetzel/frontend:${TAG}"
+  )
 else
-  log "SKIP_BUILD=1 — reusing existing images"
+  log "using published GHCR images (chart appVersion). Pass --local to build/use local images."
 fi
 
 # 6. install / upgrade the platform -------------------------------------------
@@ -72,9 +102,7 @@ log "helm upgrade --install $RELEASE -> namespace $NAMESPACE (profile $PROFILE)"
 helm upgrade --install "$RELEASE" "$CHART" \
   --namespace "$NAMESPACE" --create-namespace \
   --set profile="$PROFILE" \
-  --set operator.image="quetzel/operator:${TAG}" \
-  --set backend.image="quetzel/backend:${TAG}" \
-  --set frontend.image="quetzel/frontend:${TAG}" \
+  "${IMAGE_ARGS[@]}" \
   --wait --timeout 300s
 
 # 7. wait for rollouts --------------------------------------------------------

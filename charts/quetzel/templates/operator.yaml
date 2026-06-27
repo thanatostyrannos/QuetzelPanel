@@ -24,7 +24,7 @@ spec:
       serviceAccountName: quetzel-operator
       containers:
         - name: operator
-          image: {{ .Values.operator.image }}
+          image: {{ include "quetzel.image" (dict "ctx" . "component" "operator") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["kopf", "run", "--standalone", "--namespace", "{{ include "quetzel.watchNamespace" . }}", "-m", "quetzel_operator.handlers"]
           env:

@@ -20,7 +20,7 @@ spec:
       serviceAccountName: quetzel-backend
       containers:
         - name: backend
-          image: {{ .Values.backend.image }}
+          image: {{ include "quetzel.image" (dict "ctx" . "component" "backend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: QUETZEL_PROVIDER
