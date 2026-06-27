@@ -39,6 +39,7 @@
         "TYPE": "VANILLA"
       },
       "versionEnv": "VERSION",
+      "playersEnv": "MAX_PLAYERS",
       "dataPath": "/data",
       "stopCommand": "rcon-cli save-all && rcon-cli stop",
       "accent": "#5b8c3e",

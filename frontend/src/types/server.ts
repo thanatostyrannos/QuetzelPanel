@@ -11,6 +11,17 @@ export interface Port {
   protocol: string;
 }
 
+/** Player-based sizing parameters from the catalog (WP-B). */
+export interface Sizing {
+  baseMemoryMiB: number;
+  memoryPerPlayerMiB: number;
+  baseCpuMilli: number;
+  cpuPerPlayerMilli: number;
+  maxPlayers: number;
+  ceilingMemoryMiB?: number;
+  ceilingCpuMilli?: number;
+}
+
 export interface Game {
   id: string;
   name: string;
@@ -23,6 +34,8 @@ export interface Game {
   defaultEnv: Record<string, string>;
   accent: string;
   icon: string;
+  /** Optional player-based sizing block. Present for all catalog games. */
+  sizing?: Sizing;
 }
 
 export interface GameServerStatus {
