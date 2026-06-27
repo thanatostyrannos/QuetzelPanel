@@ -81,7 +81,7 @@ class K8sMetricsProvider(MetricsProvider):
     """Real metrics from metrics-server + kubelet stats.
 
     CPU/memory: metrics.k8s.io/v1beta1 PodMetrics, expressed as % of pod limits.
-    Disk:       kubelet /stats/summary for the PVC volume named "data-<server>-0".
+    Disk:       kubelet /stats/summary for the PVC volume named "world-<server>-0".
     Health:     nodes + quetzel-namespace pods + GameServer CRs.
     """
 
@@ -149,7 +149,9 @@ class K8sMetricsProvider(MetricsProvider):
         mem_pct = memory_percent(mem_usage, mem_limit) if mem_usage is not None and mem_limit else None
 
         # --- disk via kubelet summary ---
-        pvc_name = f"data-{name}-0"
+        # The operator's volumeClaimTemplate is named "world" (manifests.py),
+        # so the StatefulSet pod's PVC is "world-<name>-0".
+        pvc_name = f"world-{name}-0"
         disk_pct: float | None = None
         try:
             # Identify which node runs the pod
