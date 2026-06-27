@@ -85,17 +85,21 @@ class K8sProvider(Provider):
         opts = req.options or {}
         env = dict(game.get("defaultEnv", {}))
         env.update(opts.get("env", {}))
+        spec: dict = {
+            "game": req.game,
+            "version": opts.get("version") or catalog.default_version(req.game),
+            "storageSize": opts.get("storageSize", "2Gi"),
+            "env": env,
+            "rconEnabled": bool(game.get("rcon", {}).get("enabled", False)),
+        }
+        # WP-B: propagate maxPlayers so the operator can apply player-based sizing.
+        if opts.get("maxPlayers") is not None:
+            spec["maxPlayers"] = int(opts["maxPlayers"])
         body = {
             "apiVersion": f"{GROUP}/{VERSION}",
             "kind": "GameServer",
             "metadata": {"name": req.name, "namespace": self.namespace},
-            "spec": {
-                "game": req.game,
-                "version": opts.get("version") or catalog.default_version(req.game),
-                "storageSize": opts.get("storageSize", "2Gi"),
-                "env": env,
-                "rconEnabled": bool(game.get("rcon", {}).get("enabled", False)),
-            },
+            "spec": spec,
         }
         obj = self._api.create_namespaced_custom_object(
             GROUP, VERSION, self.namespace, PLURAL, body
