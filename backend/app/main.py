@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .deps import get_provider
 from .providers.base import Provider
-from .routers import games, servers
+from .routers import auth, clusters, customers, games, metrics, servers
 
 
 @asynccontextmanager
@@ -49,3 +49,7 @@ async def healthz(provider: Provider = Depends(get_provider)):
 
 app.include_router(games.router)
 app.include_router(servers.router)
+app.include_router(auth.router)
+app.include_router(metrics.router)
+app.include_router(clusters.router)
+app.include_router(customers.router)

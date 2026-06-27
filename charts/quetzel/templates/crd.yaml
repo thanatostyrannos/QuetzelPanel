@@ -59,6 +59,13 @@ spec:
                 rconEnabled:
                   type: boolean
                   default: true
+                maxPlayers:
+                  type: integer
+                  minimum: 1
+                  description: Desired max players; drives player-based resource sizing (WP-B).
+                customer:
+                  type: string
+                  description: Owning customer id (WP-D); mirrored to the quetzel.gg/customer label.
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true
