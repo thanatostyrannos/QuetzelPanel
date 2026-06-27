@@ -51,6 +51,9 @@ Single git monorepo. Tech is frozen in `STACK.md` — do not change core choices
    or logged. Authz enforced server-side on every route. Validate all input.
 6. **Docs/state**: update `README.md`; append to `STATE.md` each increment (iteration, change, REAL
    command output proving it). Absolute dates.
+7. **CI/CD**: every change reaches `main` via a PR whose CI is **green** (all tests + lint +
+   `helm lint`/`template` + image builds). Merging a PR to `main` is what produces release artifacts
+   (see the CI/CD PIPELINES section). Never merge red; never hand-publish artifacts.
 
 ---
 
@@ -76,21 +79,29 @@ This is what makes parallel work safe. Do NOT delegate it.
   - Frontend shared types: `User`, `Customer`, `ServerMetrics`, `ClusterHealth`.
 - **Decide persistence** behind `UserStore`/customer store: Postgres via the chart for `profile:
   enterprise/prod`, SQLite-on-PVC for `profile: local`. Mock impl needs no DB.
-- Commit Phase 0. Now the contracts are stable and parallel subagents build against them.
+- **Stand up CI/CD first** (see the CI/CD PIPELINES section): author `.github/workflows/ci.yml` and
+  `.github/workflows/release.yml`, and make the Helm chart's image values point at the published
+  registry (overridable for local dev). This must land in Phase 0 so every subsequent WP PR is gated by
+  a green CI from day one.
+- Land Phase 0 via a PR into `main` (CI green). Now the contracts + pipelines are stable and parallel
+  subagents build against them.
 
 ### Branching & naming (human-friendly — required)
-The repo is committed and clean on base branch **`master`** (local-only, no remote). Use readable,
-kebab-case names everywhere — NO random/auto-generated hashes for branches, worktrees, or subagent labels.
-- Phase 0 lands on `master` first (or a short-lived `enterprise/foundation` you merge into `master`
-  immediately) so every work-package branch includes the contracts.
-- One branch per work package, all cut from `master` after Phase 0:
+Trunk is **`main`** on GitHub; all work merges via **pull request** (CI must be green to merge — see
+CI/CD PIPELINES). The repo today is local-only on `master`: before starting, rename the trunk to `main`,
+push to GitHub, set `main` as the default branch, and enable branch protection that requires the CI
+checks. Use readable, kebab-case names everywhere — NO random/auto-generated hashes for branches,
+worktrees, or subagent labels.
+- Phase 0 lands on `main` via PR first so every work-package branch includes the contracts + pipelines.
+- One branch per work package, all cut from `main` after Phase 0, each merged back via its own PR:
   - WP-A → `enterprise/auth`
   - WP-B → `enterprise/player-sizing`
   - WP-C → `enterprise/observability`
   - WP-D → `enterprise/multi-cluster`
 - Name each subagent and its worktree to match (e.g. subagent "auth" → worktree `../qz-auth` on branch
   `enterprise/auth`). The label, the worktree dir, and the branch should all read the same.
-- Integrate by merging each `enterprise/*` branch back into `master` in dependency order (§1 Phase 2).
+- Integrate by opening a PR from each `enterprise/*` branch into `main` in dependency order (§1 Phase 2);
+  merge only when CI is green, which triggers the release pipeline (artifacts built/published on merge).
 
 ### Phase 1 — Fan out to subagents (parallel where independent)
 Spawn one subagent per work package below. **Give each subagent an isolated git worktree** (so parallel
@@ -107,12 +118,14 @@ Dependency order:
   merges, but its `ClusterRegistry`/aggregation half can proceed against the Phase-0 stub in parallel.
 
 ### Phase 2 — Integration (YOU, after each subagent returns)
-- Pull each worktree's branch, run the FULL test suite (backend+operator+frontend+`helm lint`/`template`),
-  resolve any seam conflicts (you own router registration + nav + values.yaml merges).
-- Deploy with `./install.sh` and verify on the LIVE cluster (paste real `kubectl`/`curl` output into
-  `STATE.md`). Re-run the `e2e/mineflayer` bot — it must still pass.
-- 3-strikes rule: if a work package fails verification 3× , write a `BLOCKERS.md` entry (symptom,
-  diagnosis, attempts) and either re-scope the subagent brief or take it over directly.
+- Open a PR from each `enterprise/*` branch into `main`. Resolve any seam conflicts (you own router
+  registration + nav + values.yaml merges). The PR's **CI must pass** (full test suite +
+  `helm lint`/`template` + image builds) before merge — do not merge red.
+- After merge, confirm the **release pipeline** ran and published the artifacts for that change.
+- Then deploy with `./install.sh` and verify on the LIVE cluster (paste real `kubectl`/`curl` output
+  into `STATE.md`). Re-run the `e2e/mineflayer` bot — it must still pass.
+- 3-strikes rule: if a work package fails CI or live verification 3×, write a `BLOCKERS.md` entry
+  (symptom, diagnosis, attempts) and either re-scope the subagent brief or take it over directly.
 
 ### Subagent hygiene
 - Briefs are self-contained: include the §0 codebase map, §Environment, §Engineering standards, the
@@ -120,6 +133,49 @@ Dependency order:
 - Keep subagents narrow: one work package each. If a package is still too big, the subagent may itself
   decompose, but ownership boundaries hold.
 - You are responsible for the final integrated result and the Definition of Done.
+
+---
+
+## CI/CD PIPELINES (all artifacts — REQUIRED)
+
+GitHub Actions in `.github/workflows/`. Two pipelines; artifacts are produced **on PR acceptance to
+`main`** (i.e. on merge), never from a developer machine.
+
+### `ci.yml` — gate every PR (on `pull_request` to `main`, and pushes to `enterprise/*`)
+Must pass before a PR can merge (wire these as required status checks in branch protection). Jobs:
+- **backend-tests**: set up Python, `pip install -r backend/requirements.txt`, `pytest` in `backend/`.
+- **operator-tests**: `pytest` in `operator/`.
+- **frontend-tests**: `npm ci` + `npm run test` + `npm run build` in `frontend/`.
+- **helm**: `helm lint charts/quetzel` and `helm template` for both `profile: local` and the
+  enterprise/prod profile (fail on render errors).
+- **images-build**: `docker build` each of operator/backend/frontend (no push) to prove the Dockerfiles
+  build in CI. Use buildx + layer caching.
+- (Optional but encouraged) **e2e-smoke**: spin up an ephemeral cluster (e.g. `kind`/`k3d`),
+  `helm install`, deploy a GameServer in mock-or-light mode, and assert it reaches Running. Keep it fast.
+
+### `release.yml` — publish artifacts (on `push` to `main`, i.e. after a PR merges; also on tags `v*`)
+`permissions: { contents: write, packages: write }`. Jobs:
+- **images**: build and **push all three images** to GHCR — `ghcr.io/<owner>/quetzel-operator`,
+  `…/quetzel-backend`, `…/quetzel-frontend` — each tagged with the commit SHA, `latest`, and (on a
+  `v*` tag) the semver. Multi-arch (amd64+arm64) via buildx if feasible. Log in with `GITHUB_TOKEN`.
+- **chart**: `helm package charts/quetzel` and publish it — push the OCI chart to
+  `ghcr.io/<owner>/charts/quetzel` (`helm push`) AND attach the `.tgz` to a GitHub Release. The chart's
+  default image values must reference the published GHCR images at the matching version.
+- **release**: create/update a GitHub Release for the version with the chart `.tgz` and a note listing
+  the image digests.
+
+### Versioning & wiring
+- Single source of version: `charts/quetzel/Chart.yaml` `version`/`appVersion`; images share that tag
+  (plus SHA). A `v<version>` git tag cuts an immutable release.
+- `values.yaml` images default to the GHCR refs + chart `appVersion`; `build-images.sh` + `install.sh`
+  still support local `quetzel/*:dev` for offline dev (document both; `install.sh --local` or an env
+  flag selects local images).
+- Keep secrets out of CI logs; use `GITHUB_TOKEN`/repo secrets only. Pin action versions.
+
+### Acceptance
+- A PR with a failing test cannot be merged (CI red). A green PR merged to `main` results in all three
+  images + the chart published to GHCR and a GitHub Release, with no manual steps. `install.sh` can
+  deploy straight from the published artifacts.
 
 ---
 
@@ -139,7 +195,8 @@ Dependency order:
   Enterprise*`, cluster switcher, `src/api/clusters.ts`. Tests alongside.
 - **Lead-owned seams (no subagent edits)**: `backend/app/main.py` (router registration + auth
   middleware), `frontend/src/App.tsx` (nav/shell), `charts/quetzel/values.yaml` merges,
-  `install.sh`, `README.md`, `STATE.md`.
+  `.github/workflows/**` (CI/CD), `install.sh`, `README.md`, `STATE.md`. (A WP that needs a new CI step
+  — e.g. a DB service for tests — returns the request; the lead edits the workflow.)
 
 ---
 
@@ -214,13 +271,18 @@ a second (or mock-remote) cluster appears in the rollup.
 ---
 
 ## 5. DEFINITION OF DONE (whole job)
-- All four work packages integrated; **all pre-existing tests pass**; `e2e/mineflayer` still joins a
-  deployed Minecraft server and walks.
+- All four work packages integrated **via PRs to `main` with green CI**; **all pre-existing tests pass**;
+  `e2e/mineflayer` still joins a deployed Minecraft server and walks.
 - `QUETZEL_PROVIDER=mock` runs the full feature set with no cluster.
 - `helm lint` + `helm template` clean (local + enterprise/prod profiles); RBAC least-privilege;
   `./install.sh` idempotent; deployed and verified on the live k3s cluster with pasted real output.
-- `README.md` updated; `STATE.md` logs each iteration with real command output; small clean commits.
+- **CI/CD live**: PRs are gated by `ci.yml`; merging to `main` publishes all artifacts (operator,
+  backend, frontend images + Helm chart) to GHCR with a GitHub Release, no manual steps; `install.sh`
+  can deploy from the published artifacts.
+- `README.md` updated (incl. how to consume the published images/chart); `STATE.md` logs each iteration
+  with real command output; small clean commits.
 
 Start with Phase 0: read `STACK.md`, `backend/app/providers/`, `operator/quetzel_operator/manifests.py`,
-`charts/quetzel/`; modularize the seams; publish the contracts with failing tests; commit; THEN spawn
-the WP-A/B/C subagents.
+`charts/quetzel/`; rename trunk to `main` + push to GitHub with branch protection; author the CI/CD
+workflows; modularize the seams; publish the contracts with failing tests; land it via a green PR; THEN
+spawn the WP-A/B/C subagents.
