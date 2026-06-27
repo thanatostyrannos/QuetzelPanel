@@ -5,11 +5,11 @@ Deploy, and a Kubernetes operator provisions, exposes, and tears down a dedicate
 for it. Built as a single monorepo: a `GameServer` CRD + controller, a REST API, and a
 React SPA.
 
-> **Current status (local):** the Rancher Desktop / k3s cluster on this machine won't
-> start (WSL distros stay *Stopped*, see [BLOCKERS.md](BLOCKERS.md)). The product is fully
-> working **against a mocked Kubernetes layer** so the UI and API run end-to-end today; the
-> real operator/CRD/Helm path is written and validated offline and drops in unchanged once
-> the cluster is healthy (`QUETZEL_PROVIDER=k8s`).
+> **Status:** runs live on k3s (verified) **and** fully offline against a mocked
+> Kubernetes layer (`QUETZEL_PROVIDER=mock`). The **enterprise foundation** is landing:
+> CI/CD pipelines, modular routers, and published contracts/seams for authentication,
+> player-based sizing, observability, and multi-tenant / multi-cluster — each built out
+> in its own work package. See [STATE.md](STATE.md).
 
 ---
 
@@ -75,9 +75,10 @@ Requires a **running** cluster, `kubectl`, `helm`, and a container engine (`nerd
 preferred so images land in the k3s containerd store).
 
 ```bash
-./install.sh                 # build images, install the chart, wait for rollouts, print the URL
+./install.sh                 # deploy the PUBLISHED GHCR images (chart appVersion)
+./install.sh --local         # build local quetzel/*:dev images and deploy those
+./install.sh --local --skip-build   # reuse already-built local images
 PROFILE=prod ./install.sh    # also bootstrap MetalLB/Longhorn/etc (stub for bare metal)
-SKIP_BUILD=1 ./install.sh    # reuse existing images
 ./uninstall.sh               # remove the platform (keeps CRD + GameServers)
 PURGE=1 ./uninstall.sh       # remove everything incl. CRD + namespace
 ```
@@ -85,6 +86,19 @@ PURGE=1 ./uninstall.sh       # remove everything incl. CRD + namespace
 `install.sh` is idempotent (helm upgrade --install + cached image builds). The platform
 installs into the `quetzel` namespace and is exposed via Traefik at
 `http://quetzel.localhost/` (or `kubectl -n quetzel port-forward svc/quetzel-frontend 8080:80`).
+
+### Consume the published artifacts
+
+Merges to `main` publish three images and the Helm chart to GHCR (see CI/CD below):
+
+```bash
+# images: ghcr.io/thanatostyrannos/quetzel-{operator,backend,frontend}:<appVersion>
+helm install quetzel oci://ghcr.io/thanatostyrannos/charts/quetzel --version <appVersion> \
+  --namespace quetzel --create-namespace
+```
+
+The chart's default image values already point at those GHCR refs at the matching
+`appVersion`; `./install.sh --local` overrides them with local builds for offline dev.
 
 Deploy a server straight from the CLI:
 
@@ -114,8 +128,45 @@ k6 run k6/api_load.js
 
 Coverage: catalog, model validation, mock-provider lifecycle, full API CRUD, operator
 manifest builders (StatefulSet/Service/Secret/PDB, RCON-via-Secret, readiness, graceful
-preStop), status derivation, API client, components, and an App deploy→delete flow. k6
-exercises read-heavy + create/get/delete churn with latency/error thresholds.
+preStop), status derivation, API client, components, and an App deploy→delete flow, plus
+the enterprise contracts (roles/auth dependency, UserStore, tenancy scoping, metrics +
+cluster registry, sizing schema). k6 exercises read-heavy + create/get/delete churn.
+
+---
+
+## Grand E2E — the finish line
+
+[`e2e/verify.sh`](e2e/verify.sh) is the machine-checkable finish line: it reconciles a
+desired set of customers + differently-sized Minecraft servers, then asserts four hard
+gates — **sizing** reached the cluster (live StatefulSet resources == `compute_resources`),
+**liveness** (all pods Running within a bounded timeout; Pending/CrashLoop ⇒ FAIL),
+**connectivity** (≥2 mineflayer bots per server join and walk), and **tenancy** (a
+customer-user sees only its own servers; an admin sees all).
+
+```bash
+./e2e/verify.sh            # full: 2 customers x 2 servers x >=2 bots (live cluster)
+./e2e/verify.sh --smoke    # CI/k3d: 1 customer x 1 server x 1 bot, smallest tier
+./e2e/verify.sh --reset    # delete the e2e servers (clean slate)
+```
+
+It is idempotent (reuse-or-create by name) and capability-aware: gates whose feature
+isn't merged yet print `SKIP` (so the script runs from the foundation through to the full
+finish line). The pooled bot harness is [`e2e/mineflayer/harness.js`](e2e/mineflayer/harness.js).
+
+---
+
+## CI/CD
+
+GitHub Actions in [`.github/workflows`](.github/workflows):
+
+- **`ci.yml`** gates every PR to `main` (and `enterprise/*` pushes): backend/operator/
+  frontend tests, `helm lint` + `helm template` (local + enterprise profiles), image
+  builds, and a k3d **e2e-smoke** (the 1×1×1 form of `verify.sh`).
+- **`release.yml`** runs on merge to `main` (and `v*` tags): builds and pushes the three
+  images to GHCR, packages + pushes the OCI Helm chart, and cuts a GitHub Release with the
+  image digests. `Chart.yaml` `appVersion` is the single source of the version.
+
+Artifacts are produced only on acceptance to `main` — never from a developer machine.
 
 ---
 
@@ -127,15 +178,20 @@ operator/     kopf reconciler + pure manifest/status builders + pytest
 frontend/     React + Vite + Tailwind SPA + Vitest
 charts/quetzel/  Helm chart (CRD, RBAC, ConfigMap, Deployments, Services, Ingress)
 deploy/       exported catalog.json + sample GameServer CRs
+e2e/          verify.sh finish-line + mineflayer pooled bot harness
 k6/           load + smoke tests
+.github/workflows/   ci.yml (PR gate) + release.yml (GHCR images + chart on merge)
 install.sh / uninstall.sh / build-images.sh
 STATE.md / BLOCKERS.md / STACK.md / CONFIG.md   build log + decisions
 ```
 
-## Security notes (v1)
+## Security notes
 
-- Single trusted user — no auth yet; the slot for it is marked in
-  [`backend/app/main.py`](backend/app/main.py).
+- **Auth** is being added in WP-A (local user/pass + Google OIDC, JWT sessions, roles).
+  The seam is published: `current_user` dependency + `Role` precedence + `UserStore`
+  (`backend/app/auth`, `backend/app/users`). In mock/dev with no IdP configured the
+  dependency allows a platform-admin so the app stays demoable; a real token verifier
+  turns enforcement on. OAuth/JWT/DB secrets come from k8s Secrets + Helm values.
 - RCON passwords are generated and stored in a Secret, never hardcoded or logged.
 - Minecraft EULA acceptance is explicit and visible (catalog `EULA=TRUE`, shown in the UI).
 - Least-privilege RBAC: the backend can only touch `GameServer` CRs; the operator manages

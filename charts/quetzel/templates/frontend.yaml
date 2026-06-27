@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: {{ .Values.frontend.image }}
+          image: {{ include "quetzel.image" (dict "ctx" . "component" "frontend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           # nginx serves the SPA and proxies /api/ -> quetzel-backend:8000 (baked nginx.conf)
           ports:

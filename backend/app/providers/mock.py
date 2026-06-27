@@ -117,6 +117,8 @@ class MockProvider(Provider):
             storageSize=opts.get("storageSize", "2Gi"),
             env=env,
             rconEnabled=bool(game.get("rcon", {}).get("enabled", False)),
+            maxPlayers=opts.get("maxPlayers"),
+            customer=opts.get("customer"),
         )
         server = GameServer(
             name=req.name,

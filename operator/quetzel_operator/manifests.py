@@ -25,6 +25,16 @@ def generate_rcon_password(nbytes: int = 24) -> str:
     return secrets.token_urlsafe(nbytes)
 
 
+def compute_resources(sizing: dict, max_players: int) -> dict:
+    """Player-based sizing -> {"requests": {...}, "limits": {...}} (PURE).
+
+    SEED: implemented by WP-B (player-sizing). Must be monotonic in max_players,
+    clamped to the sizing ceilings, with sane rounding (Mi/m units). build_statefulset
+    uses it when explicit spec.resources are absent (explicit always overrides).
+    """
+    raise NotImplementedError("compute_resources is implemented in WP-B (player-sizing)")
+
+
 def labels(name: str) -> dict:
     return {
         "app.kubernetes.io/name": "quetzel-gameserver",

@@ -17,6 +17,22 @@ class Resources(BaseModel):
     mem: str = "2Gi"
 
 
+class Sizing(BaseModel):
+    """Per-game player-based sizing parameters (catalog `sizing` block).
+
+    compute_resources(sizing, maxPlayers) turns these into requests/limits
+    (implemented in the operator by WP-B). Ceilings are optional clamps.
+    """
+
+    baseMemoryMiB: int
+    memoryPerPlayerMiB: int
+    baseCpuMilli: int
+    cpuPerPlayerMilli: int
+    maxPlayers: int
+    ceilingMemoryMiB: Optional[int] = None
+    ceilingCpuMilli: Optional[int] = None
+
+
 class GameServerSpec(BaseModel):
     game: str
     version: Optional[str] = None
@@ -25,6 +41,11 @@ class GameServerSpec(BaseModel):
     storageSize: str = "2Gi"
     env: dict[str, str] = Field(default_factory=dict)
     rconEnabled: bool = True
+    # Player-based sizing input (WP-B). When set and explicit resources are
+    # absent, the operator computes resources from the catalog `sizing` block.
+    maxPlayers: Optional[int] = None
+    # Owning customer (WP-D). Mirrored to the quetzel.gg/customer label.
+    customer: Optional[str] = None
 
 
 class GameServerStatus(BaseModel):

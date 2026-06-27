@@ -24,6 +24,17 @@ CATALOG: list[dict] = [
         "name": "Minecraft",
         "description": "Java Edition survival/creative server (itzg).",
         "image": "itzg/minecraft-server:latest",
+        # Player-based sizing (WP-B tunes). Small base heap suits PaperMC on a
+        # single box; per-player adds headroom up to the ceiling.
+        "sizing": {
+            "baseMemoryMiB": 768,
+            "memoryPerPlayerMiB": 12,
+            "baseCpuMilli": 250,
+            "cpuPerPlayerMilli": 5,
+            "maxPlayers": 50,
+            "ceilingMemoryMiB": 4096,
+            "ceilingCpuMilli": 2000,
+        },
         "protocol": "tcp",
         "ports": [{"name": "game", "port": 25565, "protocol": "TCP"}],
         # rcon: passwordEnv/enableEnv tell the operator how to inject the
@@ -47,6 +58,15 @@ CATALOG: list[dict] = [
         "name": "Valheim",
         "description": "Co-op Viking survival dedicated server (lloesche).",
         "image": "lloesche/valheim-server:latest",
+        "sizing": {
+            "baseMemoryMiB": 1536,
+            "memoryPerPlayerMiB": 64,
+            "baseCpuMilli": 500,
+            "cpuPerPlayerMilli": 50,
+            "maxPlayers": 10,
+            "ceilingMemoryMiB": 4096,
+            "ceilingCpuMilli": 3000,
+        },
         "protocol": "udp",
         "ports": [
             {"name": "game", "port": 2456, "protocol": "UDP"},
@@ -64,6 +84,15 @@ CATALOG: list[dict] = [
         "name": "Terraria",
         "description": "2D sandbox adventure dedicated server.",
         "image": "ryshe/terraria:latest",
+        "sizing": {
+            "baseMemoryMiB": 512,
+            "memoryPerPlayerMiB": 8,
+            "baseCpuMilli": 200,
+            "cpuPerPlayerMilli": 3,
+            "maxPlayers": 16,
+            "ceilingMemoryMiB": 2048,
+            "ceilingCpuMilli": 1500,
+        },
         "protocol": "tcp",
         "ports": [{"name": "game", "port": 7777, "protocol": "TCP"}],
         "rcon": {"enabled": False, "port": 0},
@@ -78,6 +107,15 @@ CATALOG: list[dict] = [
         "name": "Factorio",
         "description": "Automation & logistics multiplayer server.",
         "image": "factoriotools/factorio:stable",
+        "sizing": {
+            "baseMemoryMiB": 1024,
+            "memoryPerPlayerMiB": 16,
+            "baseCpuMilli": 300,
+            "cpuPerPlayerMilli": 8,
+            "maxPlayers": 64,
+            "ceilingMemoryMiB": 4096,
+            "ceilingCpuMilli": 3000,
+        },
         "protocol": "udp",
         "ports": [{"name": "game", "port": 34197, "protocol": "UDP"}],
         "rcon": {
