@@ -191,6 +191,12 @@ def build_statefulset(
             "replicas": 1,
             "serviceName": name,
             "selector": {"matchLabels": labels(name)},
+            # Reclaim the world volume when the GameServer is deleted, but keep it
+            # across scaling / pod restarts (self-heal must preserve world state).
+            "persistentVolumeClaimRetentionPolicy": {
+                "whenDeleted": "Delete",
+                "whenScaled": "Retain",
+            },
             "template": {
                 "metadata": {"labels": labels(name)},
                 "spec": {

@@ -143,6 +143,16 @@ def test_statefulset_no_rcon_env_when_game_has_no_rcon():
     assert "RCON_PASSWORD" not in names
 
 
+def test_statefulset_pvc_retention_deletes_on_delete_but_keeps_on_scale():
+    # Deleting the GameServer (-> StatefulSet) should reclaim the volume, but a
+    # pod restart / self-heal (not a scale) must keep it. whenScaled=Retain also
+    # leaves the PVC untouched on plain pod deletion.
+    ss = m.build_statefulset("mc1", NS, MC_SPEC, MC_GAME)
+    pol = ss["spec"]["persistentVolumeClaimRetentionPolicy"]
+    assert pol["whenDeleted"] == "Delete"
+    assert pol["whenScaled"] == "Retain"
+
+
 def test_statefulset_pvc_uses_storage_size_and_mounts_data_path():
     ss = m.build_statefulset("mc1", NS, MC_SPEC, MC_GAME)
     vct = ss["spec"]["volumeClaimTemplates"][0]
