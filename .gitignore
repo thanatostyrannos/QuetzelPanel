@@ -1,0 +1,24 @@
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build artifacts
+*.tar
+*.log
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local kube/secrets scratch
+*.tmp
+scratch/

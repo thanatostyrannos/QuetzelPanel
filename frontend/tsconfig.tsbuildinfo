@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/deploymodal.tsx","./src/components/gamecard.tsx","./src/components/servercard.tsx","./src/components/statuspill.tsx"],"version":"5.9.3"}
