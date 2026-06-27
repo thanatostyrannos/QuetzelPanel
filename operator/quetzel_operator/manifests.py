@@ -26,13 +26,57 @@ def generate_rcon_password(nbytes: int = 24) -> str:
 
 
 def compute_resources(sizing: dict, max_players: int) -> dict:
-    """Player-based sizing -> {"requests": {...}, "limits": {...}} (PURE).
+    """Player-based sizing -> {"requests": {...}, "limits": {...}} (PURE, WP-B).
 
-    SEED: implemented by WP-B (player-sizing). Must be monotonic in max_players,
-    clamped to the sizing ceilings, with sane rounding (Mi/m units). build_statefulset
-    uses it when explicit spec.resources are absent (explicit always overrides).
+    Formula (all integer arithmetic, no floats):
+      memory_MiB = baseMemoryMiB + memoryPerPlayerMiB * N
+      cpu_milli  = baseCpuMilli  + cpuPerPlayerMilli  * N
+    where N = clamp(max_players, 0, sizing["maxPlayers"]).
+
+    Optional ceiling keys clamp the computed values from above:
+      ceilingMemoryMiB, ceilingCpuMilli
+
+    Validation:
+      - baseMemoryMiB and baseCpuMilli must be >= 0
+      - per-player factors must be >= 0
+
+    Output: {"requests": {"cpu": "<int>m", "memory": "<int>Mi"},
+             "limits":   {"cpu": "<int>m", "memory": "<int>Mi"}}
+    requests == limits (Guaranteed QoS).
+    Monotonic non-decreasing in max_players.
     """
-    raise NotImplementedError("compute_resources is implemented in WP-B (player-sizing)")
+    base_mem = sizing["baseMemoryMiB"]
+    per_mem = sizing["memoryPerPlayerMiB"]
+    base_cpu = sizing["baseCpuMilli"]
+    per_cpu = sizing["cpuPerPlayerMilli"]
+    max_n = sizing["maxPlayers"]
+
+    if base_mem < 0:
+        raise ValueError(f"baseMemoryMiB must be >= 0, got {base_mem}")
+    if base_cpu < 0:
+        raise ValueError(f"baseCpuMilli must be >= 0, got {base_cpu}")
+    if per_mem < 0:
+        raise ValueError(f"memoryPerPlayerMiB must be >= 0, got {per_mem}")
+    if per_cpu < 0:
+        raise ValueError(f"cpuPerPlayerMilli must be >= 0, got {per_cpu}")
+
+    # Clamp player count: [0, sizing.maxPlayers]
+    n = max(0, min(int(max_players), max_n))
+
+    mem_mib = base_mem + per_mem * n
+    cpu_m = base_cpu + per_cpu * n
+
+    # Apply optional ceilings
+    ceiling_mem = sizing.get("ceilingMemoryMiB")
+    if ceiling_mem is not None:
+        mem_mib = min(mem_mib, ceiling_mem)
+
+    ceiling_cpu = sizing.get("ceilingCpuMilli")
+    if ceiling_cpu is not None:
+        cpu_m = min(cpu_m, ceiling_cpu)
+
+    tier = {"cpu": f"{cpu_m}m", "memory": f"{mem_mib}Mi"}
+    return {"requests": tier, "limits": tier}
 
 
 def labels(name: str) -> dict:
@@ -121,6 +165,13 @@ def _container_env(spec: dict, game: dict, name: str) -> list[dict]:
     if version_env and spec.get("version"):
         env.append({"name": version_env, "value": str(spec["version"])})
 
+    # WP-B: propagate player count to the game container if the catalog entry
+    # declares a playersEnv key (e.g. Minecraft's MAX_PLAYERS).
+    players_env = game.get("playersEnv")
+    max_players = spec.get("maxPlayers")
+    if players_env and max_players is not None:
+        env.append({"name": players_env, "value": str(int(max_players))})
+
     rcon = game.get("rcon", {})
     if spec.get("rconEnabled") and rcon.get("enabled"):
         if rcon.get("enableEnv"):
@@ -159,9 +210,27 @@ def build_statefulset(
     data_path = game.get("dataPath", "/data")
     volume_name = "world"
     game_port = game["ports"][0]["port"]
-    resources = spec.get("resources") or {}
-    cpu = resources.get("cpu", "1")
-    mem = resources.get("mem", "2Gi")
+
+    # WP-B: resource resolution priority:
+    #   1. Explicit spec.resources (non-empty cpu or mem) — always wins.
+    #   2. Player-based sizing: game has a "sizing" block + spec.maxPlayers is set.
+    #   3. Default: cpu=1, mem=2Gi.
+    explicit_resources = spec.get("resources") or {}
+    has_explicit = bool(explicit_resources.get("cpu") or explicit_resources.get("mem"))
+
+    sizing = game.get("sizing")
+    max_players = spec.get("maxPlayers")
+
+    if has_explicit:
+        cpu = explicit_resources.get("cpu", "1")
+        mem = explicit_resources.get("mem", "2Gi")
+    elif sizing and max_players is not None:
+        computed = compute_resources(sizing, int(max_players))
+        cpu = computed["requests"]["cpu"]
+        mem = computed["requests"]["memory"]
+    else:
+        cpu = "1"
+        mem = "2Gi"
 
     stop_cmd = game.get("stopCommand")
     # Graceful shutdown: run the game's save+stop if it has one, else give the
