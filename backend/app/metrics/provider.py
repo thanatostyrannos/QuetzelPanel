@@ -78,10 +78,135 @@ class SyntheticMetricsProvider(MetricsProvider):
 
 
 class K8sMetricsProvider(MetricsProvider):
-    """Real metrics from metrics-server + kubelet stats — implemented by WP-C."""
+    """Real metrics from metrics-server + kubelet stats.
 
-    async def server_metrics(self, name):  # pragma: no cover - WP-C
-        raise NotImplementedError("K8sMetricsProvider is implemented in WP-C (observability)")
+    CPU/memory: metrics.k8s.io/v1beta1 PodMetrics, expressed as % of pod limits.
+    Disk:       kubelet /stats/summary for the PVC volume named "data-<server>-0".
+    Health:     nodes + quetzel-namespace pods + GameServer CRs.
+    """
 
-    async def cluster_health(self):  # pragma: no cover - WP-C
-        raise NotImplementedError("K8sMetricsProvider is implemented in WP-C (observability)")
+    def __init__(self, namespace: str | None = None) -> None:
+        import os
+
+        self.namespace = namespace or os.getenv("QUETZEL_NAMESPACE", "quetzel")
+        self._core: "client.CoreV1Api | None" = None  # type: ignore[name-defined]
+        self._custom: "client.CustomObjectsApi | None" = None  # type: ignore[name-defined]
+        self._metrics_custom: "client.CustomObjectsApi | None" = None  # type: ignore[name-defined]
+
+    def _init_clients(self) -> None:
+        from kubernetes import client, config  # noqa: F401
+
+        if self._core is not None:
+            return
+        try:
+            config.load_incluster_config()
+        except config.ConfigException:
+            config.load_kube_config()
+        self._core = client.CoreV1Api()
+        self._custom = client.CustomObjectsApi()
+
+    # ------------------------------------------------------------------
+    # server_metrics
+    # ------------------------------------------------------------------
+
+    async def server_metrics(self, name: str) -> "ServerMetrics | None":
+        from .classify import (
+            cpu_percent,
+            limit_cpu_nano_from_pod,
+            limit_memory_bytes_from_pod,
+            memory_percent,
+            disk_percent_from_summary,
+            usage_cpu_nano_from_metrics,
+            usage_memory_bytes_from_metrics,
+        )
+
+        self._init_clients()
+        assert self._core is not None and self._custom is not None
+
+        # --- pod ---
+        pod_name = f"{name}-0"  # StatefulSet pod
+        try:
+            pod_obj = self._core.read_namespaced_pod(pod_name, self.namespace)
+            pod = pod_obj.to_dict()
+        except Exception:  # pragma: no cover
+            return None
+
+        cpu_limit = limit_cpu_nano_from_pod(pod)
+        mem_limit = limit_memory_bytes_from_pod(pod)
+
+        # --- metrics-server ---
+        try:
+            pm = self._custom.get_namespaced_custom_object(
+                "metrics.k8s.io", "v1beta1", self.namespace, "pods", pod_name
+            )
+        except Exception:  # pragma: no cover
+            pm = {}
+
+        cpu_usage = usage_cpu_nano_from_metrics(pm)
+        mem_usage = usage_memory_bytes_from_metrics(pm)
+
+        cpu_pct = cpu_percent(cpu_usage, cpu_limit) if cpu_usage is not None and cpu_limit else None
+        mem_pct = memory_percent(mem_usage, mem_limit) if mem_usage is not None and mem_limit else None
+
+        # --- disk via kubelet summary ---
+        pvc_name = f"data-{name}-0"
+        disk_pct: float | None = None
+        try:
+            # Identify which node runs the pod
+            node_name = pod.get("spec", {}).get("nodeName")
+            if node_name:
+                # Use the proxy subresource to call kubelet /stats/summary
+                import json
+
+                raw = self._core.connect_get_node_proxy_with_path(
+                    node_name, "stats/summary"
+                )
+                summary = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+                disk_pct = disk_percent_from_summary(summary, pvc_name)
+        except Exception:  # pragma: no cover
+            disk_pct = None
+
+        return ServerMetrics(
+            name=name,
+            cpuPercent=cpu_pct if cpu_pct is not None else 0.0,
+            memoryPercent=mem_pct if mem_pct is not None else 0.0,
+            diskPercent=disk_pct if disk_pct is not None else 0.0,
+            cpuMilli=round(cpu_usage / 1_000_000) if cpu_usage is not None else None,
+            memoryMiB=round(mem_usage / 1024 / 1024) if mem_usage is not None else None,
+        )
+
+    # ------------------------------------------------------------------
+    # cluster_health
+    # ------------------------------------------------------------------
+
+    async def cluster_health(self) -> "ClusterHealth":
+        from .classify import build_cluster_health
+
+        self._init_clients()
+        assert self._core is not None and self._custom is not None
+
+        # nodes
+        try:
+            nodes_raw = self._core.list_node()
+            nodes = [n.to_dict() for n in nodes_raw.items]
+        except Exception:  # pragma: no cover
+            nodes = []
+
+        # pods in namespace
+        try:
+            pods_raw = self._core.list_namespaced_pod(self.namespace)
+            pods = [p.to_dict() for p in pods_raw.items]
+        except Exception:  # pragma: no cover
+            pods = []
+
+        # GameServer CRs
+        try:
+            gs_raw = self._custom.list_namespaced_custom_object(
+                "quetzel.gg", "v1alpha1", self.namespace, "gameservers"
+            )
+            servers = gs_raw.get("items", [])
+        except Exception:  # pragma: no cover
+            servers = []
+
+        data = build_cluster_health(nodes, pods, servers, cluster_name="local")
+        return ClusterHealth(**data)
