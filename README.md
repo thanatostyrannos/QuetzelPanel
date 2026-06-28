@@ -6,10 +6,12 @@ for it. Built as a single monorepo: a `GameServer` CRD + controller, a REST API,
 React SPA.
 
 > **Status:** runs live on k3s (verified) **and** fully offline against a mocked
-> Kubernetes layer (`QUETZEL_PROVIDER=mock`). The **enterprise foundation** is landing:
-> CI/CD pipelines, modular routers, and published contracts/seams for authentication,
-> player-based sizing, observability, and multi-tenant / multi-cluster — each built out
-> in its own work package. See [STATE.md](STATE.md).
+> Kubernetes layer (`QUETZEL_PROVIDER=mock`). The **enterprise feature set is merged**:
+> CI/CD pipelines + modular routers (foundation), **authentication** (local user/pass +
+> Google OIDC, JWT, roles), **player-based sizing**, **observability** (per-server usage +
+> cluster health), and **multi-tenant / multi-cluster** (customer scoping + cross-cluster
+> rollups) — each shipped via its own PR. The grand e2e (`e2e/verify.sh`) is the finish
+> line. See [STATE.md](STATE.md).
 
 ---
 
@@ -187,11 +189,13 @@ STATE.md / BLOCKERS.md / STACK.md / CONFIG.md   build log + decisions
 
 ## Security notes
 
-- **Auth** is being added in WP-A (local user/pass + Google OIDC, JWT sessions, roles).
-  The seam is published: `current_user` dependency + `Role` precedence + `UserStore`
-  (`backend/app/auth`, `backend/app/users`). In mock/dev with no IdP configured the
-  dependency allows a platform-admin so the app stays demoable; a real token verifier
-  turns enforcement on. OAuth/JWT/DB secrets come from k8s Secrets + Helm values.
+- **Auth** (local user/pass with hashing + Google OIDC, JWT sessions, roles): the
+  `current_user` dependency + `Role` precedence + `UserStore` (`backend/app/auth`,
+  `backend/app/users`). In mock/dev with no `JWT_SECRET` configured the verifier is a
+  no-op and the app stays demoable (permissive platform-admin); setting `auth.enabled=true`
+  + a JWT secret turns enforcement on (unauth `/servers` → 401). A bootstrap admin can be
+  seeded from env (`auth.bootstrapAdmin`). OAuth/JWT/DB secrets come from k8s Secrets +
+  Helm values. Every server is owned by a `Customer`; listings are tenancy-scoped.
 - RCON passwords are generated and stored in a Secret, never hardcoded or logged.
 - Minecraft EULA acceptance is explicit and visible (catalog `EULA=TRUE`, shown in the UI).
 - Least-privilege RBAC: the backend can only touch `GameServer` CRs; the operator manages

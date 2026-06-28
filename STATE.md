@@ -188,3 +188,69 @@ Next: open PR enterprise/foundation -> main, let ci.yml register checks, enable 
   protection requiring them, merge (release.yml publishes artifacts), THEN fan out WP-A/B/C.
 Open issues: e2e-smoke job not yet a required check (becomes required before Phase 3);
   GHCR package visibility to be made public after first release for pull-without-auth.
+
+## Iteration 7 — 2026-06-27 — Phase 2 integration: WP-A/B/C/D merged
+Phase: P2 (integrate work packages via PRs into main; CI green each)
+Action: Spawned 4 subagents on isolated worktrees/branches, reviewed + integrated each:
+  - WP-C observability (PR #2): MetricsProvider (metrics-server + kubelet stats) +
+    pure classifiers; gauges + cluster-health panel; metrics RBAC. Lead fix: disk
+    stats use the operator PVC name `world-<name>-0` (not `data-…`).
+  - WP-B sizing (PR #3): pure compute_resources + StatefulSet wiring; CRD maxPlayers;
+    deploy-modal live preview; k8s.py maxPlayers propagation.
+  - WP-A auth (PR #4): local user/pass (hashing) + Google OIDC + JWT + roles +
+    UserStore. Lead integration: verifier wiring in lifespan (no-op without
+    JWT_SECRET => mock stays demoable), tenancy-scoped /servers, chart auth/postgres,
+    App.tsx login gate + metrics panels.
+  - WP-D tenancy + multi-cluster (PR #8): customer scoping reaches the cluster
+    (k8s.py round-trips spec.customer/maxPlayers), bootstrap admin, operator
+    quetzel.gg/customer label, ClusterRegistry + cross-cluster rollups, enterprise
+    dashboard. Lead integration: bootstrap wiring + chart secret + App.tsx tab.
+  - Phase-3 prep (PR #7): Minecraft sizing headroom (node is 32c/54Gi, not tiny) so
+    limits exceed the JVM heap; verify.sh enforcement-aware auth probe + 1G heap.
+Commands:
+  $ backend pytest -> 177 passed ; operator -> 54 passed ; frontend vitest -> 99 passed
+  $ helm lint + template (local + enterprise) -> 0 failed
+  $ all PRs merged green; release.yml published GHCR images + OCI chart per merge
+Result: PASS (all four enterprise WPs on main; CI green; mock mode intact)
+Next: Phase 3 grand e2e on the live cluster.
+Open issues: in-memory userstore for the e2e (use sqlite/postgres for durable deploys).
+
+## Iteration 8 — 2026-06-27 — Phase 3 GRAND E2E: verify.sh exit 0 (FINISH LINE)
+Phase: P3 (bounded reconcile->deploy->verify loop; <=5 iter / 45 min)
+Action: Deployed integrated main with auth enabled (./install.sh --local +
+  HELM_EXTRA_ARGS auth.enabled/jwtSecret/bootstrapAdmin.password, userstore=memory).
+  Ran e2e/verify.sh --require-all on the LIVE k3s cluster.
+  Loop iteration 1 -> FAIL, surfaced real issues (2 were e2e-gate bugs):
+    (a) Minecraft pods OOM/then CrashLoop — fixed pre-run (sizing headroom).
+    (b) sizing gate string-compared k8s quantities (1000m vs canonical "1",
+        2048Mi vs "2Gi") -> normalized via qty_norm.
+    (c) tenancy: acme-user saw 1 — verify.sh seeded `pw-acme` (7 chars) but WP-A
+        requires >=8 -> user never created -> use `<cid>-user-pw`.
+    (d) LEVEL_TYPE=FLAT with no generator-settings -> "No key layers" worldgen
+        crash on 1.20.4 -> use default (normal) world.
+  Loop iteration 2 -> PASS (real output below).
+Commands (real output, live cluster):
+  $ QZ_ADMIN_USER=admin QZ_ADMIN_PASS=*** LIVENESS_TIMEOUT=700 \
+      e2e/verify.sh --require-all
+  >> capabilities: auth=1 sizing=1 (smoke=0 require_all=1)
+  >> reconciling 4 servers (create acme-mc1/mc2, globex-mc1/mc2; customers acme,globex)
+  PASS liveness: all 4 game pods Running
+  GATE sizing (live StatefulSet requests vs compute_resources):
+     SERVER       MAXP  LIVE            EXPECTED
+     acme-mc1     2     750m/1792Mi     750m/1792Mi
+     acme-mc2     4     1/2Gi           1000m/2048Mi   (== normalized)
+     globex-mc1   6     1250m/2304Mi    1250m/2304Mi
+     globex-mc2   8     1500m/2560Mi    1500m/2560Mi
+  PASS sizing: 4 distinct resource sets, each == compute_resources()
+  harness: 4 servers x 2 bots = 8 total ; 8/8 bots ok (moved 3.4-4.9 blocks, v1.20.4)
+  PASS connectivity: >=2 bot(s)/server joined and walked
+  GATE tenancy: globex-user sees 2 (want 2) ; acme-user sees 2 (want 2)
+  PASS tenancy: admin sees all, each customer-user sees only its own
+  ---- ok=4 fail=0 skip=0 ----  RESULT: PASS  (exit 0)
+Result: PASS — DoD finish line met. 2 customers x 2 differently-sized Minecraft
+  servers (4 distinct computed resource sets proven via jsonpath) x 8 mineflayer
+  bots (>=2/server) joined and walked; tenancy scoping correct; within the bound.
+Next: follow-up WP — registry-baked game images + upstream-version monitor (user
+  request) to eliminate per-pod runtime jar downloads across clusters.
+Open issues: PaperMC runtime jar download (~90MB/pod) is slow on Mojang's CDN;
+  addressed by the caching WP. Userstore=memory for the e2e (durable: sqlite/postgres).
