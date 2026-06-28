@@ -14,7 +14,9 @@ async function joinAndWalk({
   username,
   version,
   walkMs = 8000,
-  spawnTimeoutMs = 60000,
+  // Generous: a freshly-created vanilla world can spend 90s+ on "Preparing spawn
+  // area" before it accepts logins; the bot connection survives the wait.
+  spawnTimeoutMs = 150000,
   minBlocks = 2,
   log = () => {},
 }) {

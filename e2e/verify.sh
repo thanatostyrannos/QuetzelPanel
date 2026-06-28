@@ -176,13 +176,13 @@ reconcile_servers() {
     else
       local opts
       # ONLINE_MODE=FALSE so offline mineflayer bots can join (no Mojang auth).
-      # FLAT world = instant gen + flat unobstructed ground so bots walk freely
-      # and deterministically (world type is irrelevant to the size/tenancy proof).
-      # Heap (1024M) sits well under the smallest computed limit (1792Mi) so the
-      # JVM + Paper overhead never OOM-CrashLoops the pod. Default (normal) world:
-      # LEVEL_TYPE=FLAT needs generator-settings or 1.20.4 worldgen fails with
-      # "No key layers" and never becomes ready. SPAWN_PROTECTION=0 lets bots move.
-      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"ONLINE_MODE\":\"FALSE\",\"GENERATE_STRUCTURES\":\"false\",\"SPAWN_PROTECTION\":\"0\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"1024M\",\"MAX_PLAYERS\":\"$mp\"}}"
+      # Default (normal) world — LEVEL_TYPE=FLAT without generator-settings fails
+      # 1.20.4 worldgen ("No key layers"). SPAWN_PROTECTION=0 lets bots move at
+      # spawn. Heap (1024M) sits well under the smallest computed limit (1792Mi) so
+      # the JVM never OOM-CrashLoops. VIEW_DISTANCE=6 keeps the spawn area small so
+      # the server reaches "Done" fast (a fresh vanilla world otherwise spends 90s+
+      # on spawn-area prep; the baked image is vanilla via TYPE=CUSTOM).
+      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"ONLINE_MODE\":\"FALSE\",\"GENERATE_STRUCTURES\":\"false\",\"SPAWN_PROTECTION\":\"0\",\"VIEW_DISTANCE\":\"6\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"1024M\",\"MAX_PLAYERS\":\"$mp\"}}"
       api POST /servers "{\"name\":\"$server\",\"game\":\"minecraft\",\"options\":$opts}" >/dev/null
       if [ "$API_CODE" = "201" ]; then echo "   create $server (maxPlayers=$mp, customer=$cid)"; else echo "   create $server -> HTTP $API_CODE"; fi
     fi
@@ -199,10 +199,14 @@ gate_liveness() {
     local still=()
     for row in "${pending[@]}"; do
       IFS='|' read -r cust cid server mp <<<"$row"
-      local phase ready
-      phase="$(kubectl -n "$NS" get gameserver "$server" -o jsonpath='{.status.phase}' 2>/dev/null)"
+      local ready
+      # Pod container READY is authoritative: it means the StatefulSet pod is
+      # scheduled, running, and its Service has a ready endpoint (so the
+      # connectivity gate's port-forward works). The GameServer .status.phase is
+      # operator-timed and can read "Running" while the pod is still Pending —
+      # don't trust it for liveness.
       ready="$(kubectl -n "$NS" get pod "${server}-0" -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null)"
-      if [ "$ready" = "true" ] || [ "$phase" = "Running" ]; then :; else still+=("$row"); fi
+      if [ "$ready" = "true" ]; then :; else still+=("$row"); fi
       # hard-fail fast on CrashLoopBackOff
       local waiting
       waiting="$(kubectl -n "$NS" get pod "${server}-0" -o jsonpath='{.status.containerStatuses[0].state.waiting.reason}' 2>/dev/null)"
@@ -270,7 +274,7 @@ gate_connectivity() {
   done
   sleep 5  # let port-forwards establish
   local cfg="/tmp/qz_harness.json"
-  echo "{\"botsPerServer\":$BOTS_PER_SERVER,\"walkMs\":$WALK_MS,\"servers\":[$servers_json]}" > "$cfg"
+  echo "{\"botsPerServer\":$BOTS_PER_SERVER,\"walkMs\":$WALK_MS,\"spawnTimeoutMs\":${SPAWN_TIMEOUT_MS:-150000},\"servers\":[$servers_json]}" > "$cfg"
 
   ( cd "$REPO_ROOT/e2e/mineflayer" && [ -d node_modules ] || npm install --silent >/tmp/qz_npm.log 2>&1 )
   if ( cd "$REPO_ROOT/e2e/mineflayer" && node harness.js "$cfg" ); then
