@@ -346,3 +346,24 @@ Commands (real output, live cluster):
   $ backend pytest 180 ; helm lint 0 failed
 Result: PASS — all three gauges (CPU/Memory/Disk) now show real live usage on this
   k3s; disk no longer depends on the API node-proxy.
+
+## Iteration 12 — 2026-06-27 — e2e connectivity robustness (redeploy + retest)
+Phase: Deploy current main + retest. Surfaced two e2e-harness fragilities (not
+  product bugs) on fresh, cached-image (vanilla via TYPE=CUSTOM) servers:
+  - liveness gate trusted GameServer .status.phase ("Running") which is operator-
+    timed and lagged — it read Running while the pod was still Pending, so the
+    connectivity port-forward hit "pod is not running. status=Pending". Fix: gate
+    on POD container ready=true only (authoritative; means the Service has a ready
+    endpoint).
+  - bot spawn timeout (60s) < a fresh vanilla world's spawn-area prep (~94s). Fix:
+    spawnTimeoutMs default 150000 (configurable via harness cfg) + VIEW_DISTANCE=6
+    in the server opts so spawn-gen finishes fast.
+Commands (real output, live cluster):
+  $ e2e/verify.sh --require-all -> RESULT: PASS (exit 0); 8/8 bots walked;
+      liveness/sizing/connectivity/tenancy all PASS
+  $ metrics live: acme-mc1 cpu16.2/mem74.6/disk3.5 ; globex-mc2 cpu8.0/mem53.4/disk3.5
+Result: PASS — full deploy retested green (e2e + all 3 metrics gauges).
+Open issues: cluster-health serversReady reads from the laggy GameServer .status
+  (showed 1/4 while all 4 pods Ready) — cosmetic; the e2e liveness no longer relies
+  on it. Windows note: kubectl port-forward children may outlive the trap; the run
+  cleans them via the trap on Linux/CI.

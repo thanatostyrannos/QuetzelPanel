@@ -29,6 +29,7 @@ async function main() {
   const cfg = loadConfig();
   const botsPerServer = cfg.botsPerServer || 2;
   const walkMs = cfg.walkMs || 8000;
+  const spawnTimeoutMs = cfg.spawnTimeoutMs || 150000;
   const servers = cfg.servers || [];
   if (servers.length === 0) {
     console.error("harness: no servers in config");
@@ -42,7 +43,7 @@ async function main() {
     for (let i = 0; i < botsPerServer; i++) {
       const username = botName(s.name, i);
       tasks.push(
-        joinAndWalk({ host: s.host, port: s.port, username, version: s.version, walkMs, log: (m) => console.log("  ", m) })
+        joinAndWalk({ host: s.host, port: s.port, username, version: s.version, walkMs, spawnTimeoutMs, log: (m) => console.log("  ", m) })
           .then((r) => ({ server: s.name, username, ok: true, moved: r.moved, version: r.version }))
           .catch((e) => ({ server: s.name, username, ok: false, error: e.message }))
       );
