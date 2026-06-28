@@ -15,9 +15,11 @@ from pydantic import BaseModel, Field
 
 class ServerMetrics(BaseModel):
     name: str
-    cpuPercent: float  # of the pod CPU limit
-    memoryPercent: float  # of the pod memory limit
-    diskPercent: float  # PVC usedBytes / capacityBytes
+    # None => unavailable (e.g. metrics-server not scraped yet, or the kubelet
+    # /stats/summary endpoint isn't exposed for disk). The UI renders "—", not 0%.
+    cpuPercent: float | None = None  # of the pod CPU limit
+    memoryPercent: float | None = None  # of the pod memory limit
+    diskPercent: float | None = None  # PVC usedBytes / capacityBytes
     cpuMilli: int | None = None
     memoryMiB: int | None = None
 
@@ -170,9 +172,9 @@ class K8sMetricsProvider(MetricsProvider):
 
         return ServerMetrics(
             name=name,
-            cpuPercent=cpu_pct if cpu_pct is not None else 0.0,
-            memoryPercent=mem_pct if mem_pct is not None else 0.0,
-            diskPercent=disk_pct if disk_pct is not None else 0.0,
+            cpuPercent=cpu_pct,
+            memoryPercent=mem_pct,
+            diskPercent=disk_pct,
             cpuMilli=round(cpu_usage / 1_000_000) if cpu_usage is not None else None,
             memoryMiB=round(mem_usage / 1024 / 1024) if mem_usage is not None else None,
         )

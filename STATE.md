@@ -287,3 +287,37 @@ Next: merge WP-E (PR); after game-images.yml publishes, make the GHCR game packa
   public (or add a pull secret) for fresh clusters.
 Open issues: cached images must be published+pullable before fresh-cluster minecraft
   deploys (existing cluster uses the locally-tagged image; documented in README).
+
+## Iteration 10 — 2026-06-27 — BUGFIX: "metrics unavailable" for deployed servers
+Phase: Debug (user report: per-server metrics panel shows "metrics unavailable").
+Diagnosis (live): GET /servers/<name>/metrics -> HTTP 500. Backend traceback:
+  classify.parse_cpu_to_nano ValueError: could not convert '114690582n' to float.
+  Root cause #1: metrics-server reports pod CPU usage in NANOCORES (the 'n'
+  suffix); the parser only handled 'm'/plain (unit-tested without 'n').
+  Root cause #2 (found via /cluster/health nodesTotal=0): nodes + nodes/proxy are
+  CLUSTER-scoped but WP-C granted them in a namespaced Role; `kubectl auth can-i
+  list nodes` (as backend SA) -> no. So node conditions + kubelet disk stats were
+  silently denied.
+  Root cause #3 (disk): kubelet /stats/summary via the API node-proxy returns
+  NotFound on this Rancher Desktop k3s -> disk genuinely unavailable here.
+Fix:
+  - classify.parse_cpu_to_nano handles n (nano) + u (micro) + m (milli) + cores
+    (+3 regression tests incl. the exact crashing value).
+  - chart rbac.yaml: nodes + nodes/proxy moved to a ClusterRole + ClusterRoleBinding
+    (namespaced Role can't grant cluster-scoped resources); namespaced pod/metrics
+    grants stay in the Role.
+  - metrics report None (not 0.0) when unavailable; ServerMetrics fields Optional;
+    UI MetricsGauge already renders "—" for null (honest "n/a" vs misleading 0%).
+  - install.sh --local now `rollout restart`s deployments (same :dev tag +
+    IfNotPresent didn't reload rebuilt code without a template change).
+Commands (real output, live cluster, after fix):
+  $ kubectl auth can-i list nodes --as=...quetzel-backend -> no (before ClusterRole)
+  $ GET /servers/acme-mc1/metrics -> HTTP 200
+      {"cpuPercent":19.2,"memoryPercent":71.3,"diskPercent":null,
+       "cpuMilli":144,"memoryMiB":1277}
+  $ GET /cluster/health -> nodesReady:1 nodesTotal:1 (was 0/0)
+  $ backend pytest 180 ; frontend vitest 99 ; helm lint 0 failed
+Result: PASS — per-server CPU/Memory gauges show real live usage; disk shows "—"
+  (kubelet stats not exposed on this k3s); panel no longer "metrics unavailable".
+Open issues: disk % needs the kubelet /stats/summary endpoint (absent on this
+  Rancher Desktop k3s); reports n/a there, works where the endpoint is exposed.
