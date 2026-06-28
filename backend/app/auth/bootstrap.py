@@ -27,15 +27,17 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from ..auth.roles import Role
-from ..users.store import UserStore
+
+if TYPE_CHECKING:  # avoid a runtime cycle: users/__init__ re-exports this module
+    from ..users.store import UserStore
 
 log = logging.getLogger(__name__)
 
 
-def bootstrap_admin(user_store: UserStore) -> Optional[str]:
+def bootstrap_admin(user_store: "UserStore") -> Optional[str]:
     """Create the bootstrap platform-admin user if env vars are set.
 
     Returns the user_id of the created or pre-existing admin, or None if the

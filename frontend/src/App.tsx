@@ -7,6 +7,7 @@ import { ServerCard } from "./components/ServerCard";
 import { MetricsPanel } from "./components/MetricsPanel";
 import { ClusterHealthPanel } from "./components/ClusterHealthPanel";
 import { LoginPage } from "./components/LoginPage";
+import { EnterpriseDashboard } from "./components/EnterpriseDashboard";
 import { useAuth } from "./auth/useAuth";
 
 type Toast = { id: number; kind: "ok" | "err"; text: string };
@@ -29,6 +30,7 @@ export default function App() {
   const [deployErr, setDeployErr] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Record<string, boolean>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [view, setView] = useState<"servers" | "enterprise">("servers");
   const toastId = useRef(0);
 
   const gamesById = useMemo(() => {
@@ -115,6 +117,8 @@ export default function App() {
   };
 
   const running = servers.filter((s) => s.status.phase === "Running").length;
+  // Admins (and permissive/mock mode) get the cross-cluster enterprise view.
+  const isAdmin = !authRequired || user?.role === "platform-admin";
 
   // Auth gate: show a splash while probing, then the login page if enforced.
   if (authLoading || authRequired === null) {
@@ -172,6 +176,34 @@ export default function App() {
         </div>
       </header>
 
+      {/* admin tab toggle: My Servers vs cross-cluster Enterprise view */}
+      {isAdmin && (
+        <div className="mb-6 flex gap-2 text-sm">
+          <button
+            onClick={() => setView("servers")}
+            className={
+              "rounded-lg px-3 py-1.5 font-semibold transition " +
+              (view === "servers" ? "bg-brand-500 text-white" : "bg-white/5 text-white/60 hover:bg-white/10")
+            }
+          >
+            My Servers
+          </button>
+          <button
+            onClick={() => setView("enterprise")}
+            className={
+              "rounded-lg px-3 py-1.5 font-semibold transition " +
+              (view === "enterprise" ? "bg-brand-500 text-white" : "bg-white/5 text-white/60 hover:bg-white/10")
+            }
+          >
+            Enterprise
+          </button>
+        </div>
+      )}
+
+      {view === "enterprise" && isAdmin ? (
+        <EnterpriseDashboard />
+      ) : (
+      <>
       {/* cluster health */}
       <section className="pb-8">
         <ClusterHealthPanel />
@@ -222,6 +254,9 @@ export default function App() {
           )}
         </div>
       </section>
+
+      </>
+      )}
 
       {/* deploy modal */}
       {selected && (

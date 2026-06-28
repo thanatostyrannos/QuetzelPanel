@@ -12,9 +12,10 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth.bootstrap import bootstrap_admin
 from .auth.context import set_token_verifier
 from .auth.jwt import build_token_verifier, jwt_config_from_env
-from .deps import get_provider
+from .deps import get_provider, get_user_store
 from .providers.base import Provider
 from .routers import auth, clusters, customers, games, metrics, servers
 
@@ -25,6 +26,9 @@ async def lifespan(app: FastAPI):
     # verifier stays None and current_user is permissive (mock/dev demoable).
     cfg = jwt_config_from_env()
     set_token_verifier(build_token_verifier(cfg) if cfg else None)
+    # Idempotently seed a platform-admin from env (enables API-driven tenant
+    # seeding under enforced auth; no-op if the env vars are unset).
+    bootstrap_admin(get_user_store())
     provider = get_provider()
     await provider.startup()
     yield
