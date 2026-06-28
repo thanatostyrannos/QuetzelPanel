@@ -109,8 +109,10 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list"]
+  # Direct kubelet scrape maps /stats/* -> the nodes/stats subresource (kubelet
+  # webhook authz); nodes/proxy is for the API-server node-proxy fallback path.
   - apiGroups: [""]
-    resources: ["nodes/proxy"]
+    resources: ["nodes/stats", "nodes/proxy"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
