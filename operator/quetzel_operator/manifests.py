@@ -167,14 +167,21 @@ def build_service(
     }
 
 
-def _container_env(spec: dict, game: dict, name: str) -> list[dict]:
+def _container_env(spec: dict, game: dict, name: str, cached_server_path: str | None = None) -> list[dict]:
     merged = dict(game.get("defaultEnv", {}))
     merged.update(spec.get("env") or {})
+
+    # WP-E: when running a baked (registry-cached) image, the server jar is already
+    # present in the image — run it directly via TYPE=CUSTOM so the pod never
+    # downloads from the upstream CDN at startup (overrides any catalog TYPE).
+    if cached_server_path:
+        merged["TYPE"] = "CUSTOM"
+        merged["CUSTOM_SERVER"] = cached_server_path
 
     env: list[dict] = [{"name": k, "value": str(v)} for k, v in merged.items()]
 
     version_env = game.get("versionEnv")
-    if version_env and spec.get("version"):
+    if version_env and spec.get("version") and not cached_server_path:
         env.append({"name": version_env, "value": str(spec["version"])})
 
     # WP-B: propagate player count to the game container if the catalog entry
@@ -218,7 +225,16 @@ def build_pdb(name: str, namespace: str, owner: dict | None = None, customer: st
 def build_statefulset(
     name: str, namespace: str, spec: dict, game: dict, owner: dict | None = None, customer: str | None = None
 ) -> dict:
-    image = spec.get("image") or game["image"]
+    # WP-E: image resolution — explicit spec.image wins; else a per-version baked
+    # image (game.cachedImageRepo:<version>) if the catalog declares one; else the
+    # catalog's default (download-at-runtime) image.
+    image = spec.get("image")
+    cached_server_path: str | None = None
+    if not image and game.get("cachedImageRepo") and spec.get("version"):
+        image = f'{game["cachedImageRepo"]}:{spec["version"]}'
+        cached_server_path = game.get("cachedServerPath", "/opt/minecraft/server.jar")
+    if not image:
+        image = game["image"]
     data_path = game.get("dataPath", "/data")
     volume_name = "world"
     game_port = game["ports"][0]["port"]
@@ -255,7 +271,7 @@ def build_statefulset(
         "name": game["id"],
         "image": image,
         "imagePullPolicy": "IfNotPresent",
-        "env": _container_env(spec, game, name),
+        "env": _container_env(spec, game, name, cached_server_path),
         "ports": [
             {"containerPort": p["port"], "protocol": p.get("protocol", "TCP")}
             for p in game["ports"]

@@ -56,6 +56,20 @@ jobs:
         working-directory: operator
         run: python -m pytest
 
+  tools-tests:
+    name: tools-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pytest
+        run: python -m pip install --upgrade pip pytest
+      - name: Run pytest (game-image version logic)
+        working-directory: game-images
+        run: python -m pytest
+
   frontend-tests:
     name: frontend-tests
     runs-on: ubuntu-latest
@@ -151,9 +165,17 @@ jobs:
           docker build -t quetzel/operator:ci -f operator/Dockerfile .
           docker build -t quetzel/backend:ci  -f backend/Dockerfile .
           docker build -t quetzel/frontend:ci -f frontend/Dockerfile .
+      - name: Build + import baked minecraft image (the catalog cached image)
+        run: |
+          read -r url sha < <(python3 game-images/mc_versions.py resolve 1.20.4)
+          docker build -t ghcr.io/thanatostyrannos/quetzel-game-minecraft:1.20.4 \
+            --build-arg JAVA_TAG=java21 --build-arg MC_VERSION=1.20.4 \
+            --build-arg SERVER_URL="$url" --build-arg SERVER_SHA1="$sha" \
+            game-images/minecraft
       - name: Import images into k3d
         run: |
-          k3d image import quetzel/operator:ci quetzel/backend:ci quetzel/frontend:ci -c quetzel-ci
+          k3d image import quetzel/operator:ci quetzel/backend:ci quetzel/frontend:ci \
+            ghcr.io/thanatostyrannos/quetzel-game-minecraft:1.20.4 -c quetzel-ci
       - name: Install chart
         run: |
           ./install.sh --local --skip-build || INSTALL_FAILED=1

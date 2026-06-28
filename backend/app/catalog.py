@@ -24,6 +24,12 @@ CATALOG: list[dict] = [
         "name": "Minecraft",
         "description": "Java Edition survival/creative server (itzg).",
         "image": "itzg/minecraft-server:latest",
+        # WP-E: per-version baked images (server jar pre-installed) so pods never
+        # download from Mojang at runtime. The operator uses <cachedImageRepo>:<version>
+        # for any version the build pipeline has baked (deploy/game-versions.json);
+        # CUSTOM_SERVER points itzg at the baked jar. Falls back to `image` otherwise.
+        "cachedImageRepo": "ghcr.io/thanatostyrannos/quetzel-game-minecraft",
+        "cachedServerPath": "/opt/minecraft/server.jar",
         # Player-based sizing. The memory LIMIT must comfortably exceed the JVM
         # heap (+ Paper/JVM non-heap overhead) or the pod OOM-CrashLoops. Base
         # 1536Mi leaves ~500Mi headroom over a ~1G heap; per-player widens tiers.
