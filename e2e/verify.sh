@@ -112,6 +112,26 @@ PY
   )
 }
 
+qty_norm() { # "750m/1792Mi" -> "750/1792" (cpu millicores / memory MiB); k8s
+             # canonicalizes 1000m->1 and 2048Mi->2Gi, so compare normalized.
+  python3 - "$1" <<'PY' 2>/dev/null
+import sys
+cpu, mem = sys.argv[1].split("/")
+def cpum(c):
+    c = c.strip()
+    return int(round(float(c[:-1]))) if c.endswith("m") else int(round(float(c) * 1000))
+def memmi(m):
+    m = m.strip()
+    for u, f in (("Ki", 1/1024), ("Mi", 1), ("Gi", 1024), ("Ti", 1024*1024)):
+        if m.endswith(u):
+            return int(round(float(m[:-2]) * f))
+    if m.endswith("M"): return int(round(float(m[:-1])))
+    if m.endswith("G"): return int(round(float(m[:-1]) * 1024))
+    return int(round(int(m) / (1024*1024)))  # plain bytes
+print(f"{cpum(cpu)}/{memmi(mem)}")
+PY
+}
+
 # ----------------------------------------------------------------------------- auth seeding (WP-A/D)
 declare -A CUST_JWT   # cust_id -> a customer-user JWT
 ADMIN_JWT=""
@@ -129,8 +149,9 @@ seed_identities() {
     case " $seen " in *" $cid "*) ;; *)
       seen="$seen $cid"
       api POST /customers "{\"id\":\"$cid\",\"name\":\"$cust\"}" >/dev/null
-      api POST /auth/users "{\"username\":\"$cid-user\",\"password\":\"pw-$cid\",\"role\":\"customer-user\",\"customerId\":\"$cid\"}" >/dev/null
-      CUST_JWT[$cid]="$(get_jwt "$cid-user" "pw-$cid")"
+      # Password must be >=8 chars (WP-A validation), so "$cid-user-pw" not "pw-$cid".
+      api POST /auth/users "{\"username\":\"$cid-user\",\"password\":\"${cid}-user-pw\",\"role\":\"customer-user\",\"customerId\":\"$cid\"}" >/dev/null
+      CUST_JWT[$cid]="$(get_jwt "$cid-user" "${cid}-user-pw")"
       ;;
     esac
   done
@@ -158,8 +179,10 @@ reconcile_servers() {
       # FLAT world = instant gen + flat unobstructed ground so bots walk freely
       # and deterministically (world type is irrelevant to the size/tenancy proof).
       # Heap (1024M) sits well under the smallest computed limit (1792Mi) so the
-      # JVM + Paper overhead never OOM-CrashLoops the pod.
-      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"ONLINE_MODE\":\"FALSE\",\"LEVEL_TYPE\":\"FLAT\",\"GENERATE_STRUCTURES\":\"false\",\"SPAWN_PROTECTION\":\"0\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"1024M\",\"MAX_PLAYERS\":\"$mp\"}}"
+      # JVM + Paper overhead never OOM-CrashLoops the pod. Default (normal) world:
+      # LEVEL_TYPE=FLAT needs generator-settings or 1.20.4 worldgen fails with
+      # "No key layers" and never becomes ready. SPAWN_PROTECTION=0 lets bots move.
+      opts="{\"version\":\"$MC_VERSION\",\"maxPlayers\":$mp,\"customer\":\"$cid\",\"env\":{\"TYPE\":\"PAPER\",\"VERSION\":\"$MC_VERSION\",\"ONLINE_MODE\":\"FALSE\",\"GENERATE_STRUCTURES\":\"false\",\"SPAWN_PROTECTION\":\"0\",\"USE_AIKAR_FLAGS\":\"true\",\"MEMORY\":\"1024M\",\"MAX_PLAYERS\":\"$mp\"}}"
       api POST /servers "{\"name\":\"$server\",\"game\":\"minecraft\",\"options\":$opts}" >/dev/null
       if [ "$API_CODE" = "201" ]; then echo "   create $server (maxPlayers=$mp, customer=$cid)"; else echo "   create $server -> HTTP $API_CODE"; fi
     fi
@@ -214,8 +237,10 @@ gate_sizing() {
     read -r ecpu emem lcpu lmem <<<"$(python_compute "$mp")"
     exp="${ecpu}/${emem}"
     printf '   %-14s %-6s %-28s %-28s\n' "$server" "$mp" "${live:-<none>}" "$exp"
-    echo "$live" >> "$distinct_file"
-    [ "$live" = "$exp" ] || all_ok=0
+    # Compare normalized quantities (k8s canonicalizes 1000m->1, 2048Mi->2Gi).
+    nlive="$(qty_norm "${live:-0/0}")"; nexp="$(qty_norm "$exp")"
+    echo "$nlive" >> "$distinct_file"
+    [ "$nlive" = "$nexp" ] || all_ok=0
   done
   local distinct; distinct="$(sort -u "$distinct_file" | grep -c . )"
   local want="${#TOPOLOGY[@]}"
@@ -282,6 +307,8 @@ gate_tenancy() {
 # ----------------------------------------------------------------------------- reset
 do_reset() {
   start_backend_pf
+  probe_caps
+  if [ "$CAP_AUTH" = "1" ]; then JWT="$(get_jwt "${QZ_ADMIN_USER:-admin}" "${QZ_ADMIN_PASS:-admin}")"; fi
   for row in "${TOPOLOGY[@]}"; do IFS='|' read -r _ _ server _ <<<"$row"; api DELETE "/servers/$server" >/dev/null; echo "   deleted $server ($API_CODE)"; done
   exit 0
 }

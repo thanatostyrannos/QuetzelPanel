@@ -103,6 +103,7 @@ helm upgrade --install "$RELEASE" "$CHART" \
   --namespace "$NAMESPACE" --create-namespace \
   --set profile="$PROFILE" \
   "${IMAGE_ARGS[@]}" \
+  ${HELM_EXTRA_ARGS:-} \
   --wait --timeout 300s
 
 # 7. wait for rollouts --------------------------------------------------------
