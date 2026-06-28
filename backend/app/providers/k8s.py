@@ -48,6 +48,12 @@ class K8sProvider(Provider):
                 storageSize=spec.get("storageSize", "2Gi"),
                 env=spec.get("env", {}),
                 rconEnabled=spec.get("rconEnabled", True),
+                # WP-D: round-trip owning customer so tenancy scoping (scope_for /
+                # visible_servers) can filter by spec.customer in live k8s mode.
+                customer=spec.get("customer"),
+                # WP-B: round-trip maxPlayers so the operator's player-based sizing
+                # is visible in the API response and e2e sizing gate can verify it.
+                maxPlayers=spec.get("maxPlayers"),
             ),
             status=GameServerStatus(
                 phase=status.get("phase", "Pending"),
@@ -95,6 +101,9 @@ class K8sProvider(Provider):
         # WP-B: propagate maxPlayers so the operator can apply player-based sizing.
         if opts.get("maxPlayers") is not None:
             spec["maxPlayers"] = int(opts["maxPlayers"])
+        # WP-D: propagate owning customer so tenancy scoping works in live k8s mode.
+        if opts.get("customer") is not None:
+            spec["customer"] = str(opts["customer"])
         body = {
             "apiVersion": f"{GROUP}/{VERSION}",
             "kind": "GameServer",

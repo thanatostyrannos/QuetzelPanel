@@ -63,6 +63,11 @@ auth:
     clientId: ""       # optional "Sign in with Google"; pass clientId+clientSecret via --set
     clientSecret: ""
     # redirectUri defaults to https://<ingress.host>/api/auth/google/callback
+  # Seed a platform-admin at startup (idempotent). Needed for API-driven tenant
+  # seeding (and e2e/verify.sh) under enforced auth. Set password to activate.
+  bootstrapAdmin:
+    username: admin
+    password: ""       # pass via --set auth.bootstrapAdmin.password=<secret>
 
 # In-cluster Postgres for enterprise identity/tenancy. Disabled by default
 # (local uses memory/sqlite). Enable for the enterprise profile.

@@ -79,13 +79,23 @@ def compute_resources(sizing: dict, max_players: int) -> dict:
     return {"requests": tier, "limits": tier}
 
 
-def labels(name: str) -> dict:
-    return {
+def labels(name: str, customer: str | None = None) -> dict:
+    """Standard labels applied to every child object.
+
+    WP-D: when ``customer`` is provided (i.e. spec.customer is set on the
+    GameServer CR), the ``quetzel.gg/customer`` label is added so that the
+    API-side tenancy scoping (``scope_for`` / ``visible_servers``) can filter
+    by this label in live k8s mode and kubectl can select by tenant.
+    """
+    base = {
         "app.kubernetes.io/name": "quetzel-gameserver",
         "app.kubernetes.io/instance": name,
         "app.kubernetes.io/managed-by": "quetzel-operator",
         "quetzel.gg/server": name,
     }
+    if customer:
+        base["quetzel.gg/customer"] = customer
+    return base
 
 
 def secret_name(name: str) -> str:
@@ -104,25 +114,27 @@ def owner_reference(name: str, uid: str) -> dict:
     }
 
 
-def _meta(name: str, namespace: str, owner: dict | None) -> dict:
-    meta = {"name": name, "namespace": namespace, "labels": labels(name)}
+def _meta(name: str, namespace: str, owner: dict | None, customer: str | None = None) -> dict:
+    meta = {"name": name, "namespace": namespace, "labels": labels(name, customer)}
     if owner:
         meta["ownerReferences"] = [owner]
     return meta
 
 
-def build_secret(name: str, namespace: str, password: str, owner: dict | None = None) -> dict:
+def build_secret(
+    name: str, namespace: str, password: str, owner: dict | None = None, customer: str | None = None
+) -> dict:
     return {
         "apiVersion": "v1",
         "kind": "Secret",
-        "metadata": _meta(secret_name(name), namespace, owner),
+        "metadata": _meta(secret_name(name), namespace, owner, customer),
         "type": "Opaque",
         "stringData": {SECRET_KEY: password},
     }
 
 
 def build_service(
-    name: str, namespace: str, game: dict, rcon_enabled: bool, owner: dict | None = None
+    name: str, namespace: str, game: dict, rcon_enabled: bool, owner: dict | None = None, customer: str | None = None
 ) -> dict:
     ports = [
         {
@@ -146,10 +158,10 @@ def build_service(
     return {
         "apiVersion": "v1",
         "kind": "Service",
-        "metadata": _meta(name, namespace, owner),
+        "metadata": _meta(name, namespace, owner, customer),
         "spec": {
             "type": "LoadBalancer",  # k3s ServiceLB assigns the node IP locally
-            "selector": labels(name),
+            "selector": labels(name, customer),
             "ports": ports,
         },
     }
@@ -189,22 +201,22 @@ def _container_env(spec: dict, game: dict, name: str) -> list[dict]:
     return env
 
 
-def build_pdb(name: str, namespace: str, owner: dict | None = None) -> dict:
+def build_pdb(name: str, namespace: str, owner: dict | None = None, customer: str | None = None) -> dict:
     """PodDisruptionBudget (P5): keep the single game pod available across
     voluntary disruptions (node drains), so the world isn't yanked mid-session."""
     return {
         "apiVersion": "policy/v1",
         "kind": "PodDisruptionBudget",
-        "metadata": _meta(name, namespace, owner),
+        "metadata": _meta(name, namespace, owner, customer),
         "spec": {
             "minAvailable": 1,
-            "selector": {"matchLabels": labels(name)},
+            "selector": {"matchLabels": labels(name, customer)},
         },
     }
 
 
 def build_statefulset(
-    name: str, namespace: str, spec: dict, game: dict, owner: dict | None = None
+    name: str, namespace: str, spec: dict, game: dict, owner: dict | None = None, customer: str | None = None
 ) -> dict:
     image = spec.get("image") or game["image"]
     data_path = game.get("dataPath", "/data")
@@ -265,11 +277,11 @@ def build_statefulset(
     return {
         "apiVersion": "apps/v1",
         "kind": "StatefulSet",
-        "metadata": _meta(name, namespace, owner),
+        "metadata": _meta(name, namespace, owner, customer),
         "spec": {
             "replicas": 1,
             "serviceName": name,
-            "selector": {"matchLabels": labels(name)},
+            "selector": {"matchLabels": labels(name, customer)},
             # Reclaim the world volume when the GameServer is deleted, but keep it
             # across scaling / pod restarts (self-heal must preserve world state).
             "persistentVolumeClaimRetentionPolicy": {
@@ -277,7 +289,7 @@ def build_statefulset(
                 "whenScaled": "Retain",
             },
             "template": {
-                "metadata": {"labels": labels(name)},
+                "metadata": {"labels": labels(name, customer)},
                 "spec": {
                     "terminationGracePeriodSeconds": 60,
                     "containers": [container],
@@ -285,7 +297,7 @@ def build_statefulset(
             },
             "volumeClaimTemplates": [
                 {
-                    "metadata": {"name": volume_name, "labels": labels(name)},
+                    "metadata": {"name": volume_name, "labels": labels(name, customer)},
                     "spec": {
                         "accessModes": ["ReadWriteOnce"],
                         # storageClassName omitted -> k3s default (local-path)
