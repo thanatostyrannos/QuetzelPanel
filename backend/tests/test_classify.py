@@ -141,6 +141,18 @@ class TestQuantityParsers:
     def test_cpu_fractional(self):
         assert parse_cpu_to_nano("0.5") == 500_000_000
 
+    def test_cpu_nanocores(self):
+        # metrics-server reports pod CPU usage in nanocores — the exact value
+        # that 500'd the /metrics endpoint before the fix.
+        assert parse_cpu_to_nano("114690582n") == 114690582
+
+    def test_cpu_microcores(self):
+        assert parse_cpu_to_nano("1500u") == 1_500_000
+
+    def test_usage_cpu_nano_from_metrics_nanocores(self):
+        pm = {"containers": [{"usage": {"cpu": "114690582n", "memory": "512000Ki"}}]}
+        assert usage_cpu_nano_from_metrics(pm) == 114690582
+
     def test_memory_mi(self):
         assert parse_memory_to_bytes("512Mi") == 512 * 1024 * 1024
 

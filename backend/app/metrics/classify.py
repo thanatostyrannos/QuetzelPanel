@@ -147,10 +147,17 @@ def disk_percent(used_bytes: int | None, capacity_bytes: int | None) -> float | 
 def parse_cpu_to_nano(value: str) -> int:
     """Convert a Kubernetes CPU quantity string to nanocores.
 
-    Examples: "500m" -> 500_000_000, "1" -> 1_000_000_000, "1.5" -> 1_500_000_000
+    metrics-server reports pod CPU usage in NANOCORES (the ``n`` suffix, e.g.
+    ``114690582n``); limits/requests use millicores (``m``) or whole cores.
+    Examples: "114690582n" -> 114690582, "500m" -> 500_000_000,
+              "1" -> 1_000_000_000, "1500u" -> 1_500_000.
     """
     value = value.strip()
-    if value.endswith("m"):
+    if value.endswith("n"):  # nanocores
+        return int(float(value[:-1]))
+    if value.endswith("u"):  # microcores
+        return int(float(value[:-1]) * 1_000)
+    if value.endswith("m"):  # millicores
         return int(float(value[:-1]) * 1_000_000)
     return int(float(value) * 1_000_000_000)
 

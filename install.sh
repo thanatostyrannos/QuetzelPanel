@@ -107,6 +107,15 @@ helm upgrade --install "$RELEASE" "$CHART" \
   --wait --timeout 300s
 
 # 7. wait for rollouts --------------------------------------------------------
+# Local images reuse a fixed tag (:dev) with IfNotPresent, so a helm upgrade with
+# no template change won't restart pods even though the image was rebuilt. Force a
+# restart so freshly built code actually runs.
+if [ "$LOCAL_IMAGES" = "1" ]; then
+  log "restarting deployments to pick up rebuilt :${TAG} images"
+  for d in quetzel-operator quetzel-backend quetzel-frontend; do
+    kubectl -n "$NAMESPACE" rollout restart deploy/"$d" >/dev/null 2>&1 || true
+  done
+fi
 log "waiting for rollouts"
 for d in quetzel-operator quetzel-backend quetzel-frontend; do
   kubectl -n "$NAMESPACE" rollout status deploy/"$d" --timeout=180s
