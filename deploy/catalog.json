@@ -5,6 +5,8 @@
       "name": "Minecraft",
       "description": "Java Edition survival/creative server (itzg).",
       "image": "itzg/minecraft-server:latest",
+      "cachedImageRepo": "ghcr.io/thanatostyrannos/quetzel-game-minecraft",
+      "cachedServerPath": "/opt/minecraft/server.jar",
       "sizing": {
         "baseMemoryMiB": 1536,
         "memoryPerPlayerMiB": 128,

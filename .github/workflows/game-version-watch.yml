@@ -1,0 +1,48 @@
+name: Game Version Watch
+
+# Monitors upstream Minecraft releases and, when a new stable version appears,
+# opens a PR adding it to deploy/game-versions.json. Merging that PR triggers
+# game-images.yml to bake + push the new image. This is the "auto-download
+# updated images on new versions" loop — no manual jar wrangling.
+on:
+  schedule:
+    - cron: "0 7 * * *" # daily 07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check for new upstream versions
+        id: watch
+        run: |
+          out=$(python game-images/mc_versions.py watch deploy/game-versions.json)
+          echo "result=$out" >> "$GITHUB_OUTPUT"
+          if git diff --quiet deploy/game-versions.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Open PR with the new version(s)
+        if: steps.watch.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: auto/game-versions
+          title: "game-images: ${{ steps.watch.outputs.result }}"
+          commit-message: "game-images: ${{ steps.watch.outputs.result }} (auto)"
+          body: |
+            Automated by **Game Version Watch**. A new upstream Minecraft release was
+            detected and added to `deploy/game-versions.json`.
+
+            Merging this PR triggers `game-images.yml` to bake + push the new
+            `quetzel-game-*:<version>` image. Update the catalog versions if you want
+            it offered in the UI.
+          delete-branch: true

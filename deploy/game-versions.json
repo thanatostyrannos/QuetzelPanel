@@ -1,0 +1,10 @@
+{
+  "minecraft": {
+    "imageRepo": "ghcr.io/thanatostyrannos/quetzel-game-minecraft",
+    "javaTag": "java21",
+    "versions": [
+      "1.20.4",
+      "1.21.1"
+    ]
+  }
+}

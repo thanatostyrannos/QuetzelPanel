@@ -167,8 +167,17 @@ GitHub Actions in [`.github/workflows`](.github/workflows):
 - **`release.yml`** runs on merge to `main` (and `v*` tags): builds and pushes the three
   images to GHCR, packages + pushes the OCI Helm chart, and cuts a GitHub Release with the
   image digests. `Chart.yaml` `appVersion` is the single source of the version.
+- **`game-images.yml`** bakes per-version game-server images (`ghcr.io/<owner>/quetzel-game-minecraft:<ver>`)
+  from [`deploy/game-versions.json`](deploy/game-versions.json) — the server jar is fetched at
+  **build** time and baked in, so pods never download from Mojang at startup (the runtime caches
+  the image once per node; the registry dedups it across clusters). **`game-version-watch.yml`**
+  is a daily cron that detects new upstream Minecraft releases and opens a PR adding them — merging
+  that PR triggers a fresh bake. The operator uses the cached image for any version the catalog's
+  `cachedImageRepo` covers (`TYPE=CUSTOM`), falling back to the runtime-download image otherwise.
 
-Artifacts are produced only on acceptance to `main` — never from a developer machine.
+Artifacts are produced only on acceptance to `main` — never from a developer machine. (GHCR
+packages are private by default; make `quetzel-*` + `quetzel-game-*` public, or configure an
+image-pull secret, for clusters to pull them without auth.)
 
 ---
 

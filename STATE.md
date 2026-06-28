@@ -254,3 +254,36 @@ Next: follow-up WP — registry-baked game images + upstream-version monitor (us
   request) to eliminate per-pod runtime jar downloads across clusters.
 Open issues: PaperMC runtime jar download (~90MB/pod) is slow on Mojang's CDN;
   addressed by the caching WP. Userstore=memory for the e2e (durable: sqlite/postgres).
+
+## Iteration 9 — 2026-06-27 — WP-E: registry-baked game images + version monitor
+Phase: Post-finish-line enhancement (user request: stop N pods x N clusters each
+  re-downloading the ~90MB server jar from Mojang's CDN at runtime).
+Action: Bake the server jar into versioned OCI images so the runtime caches once
+  per node and the registry dedups across clusters.
+  - game-images/minecraft/Dockerfile: fetches + sha1-verifies the server jar at
+    BUILD time, runs it via TYPE=CUSTOM (zero runtime download). Java-21 base
+    (correct for 1.20.4/1.21.x).
+  - deploy/game-versions.json: baked-version manifest (drives the build matrix).
+  - game-images/mc_versions.py (+8 unit tests): pure version resolver/selector +
+    urllib fetchers; `resolve <ver>` (build-arg url+sha) and `watch <manifest>`.
+  - .github/workflows/game-images.yml: dynamic matrix from the manifest -> buildx
+    build+push ghcr.io/.../quetzel-game-minecraft:<ver>.
+  - .github/workflows/game-version-watch.yml: daily cron -> detects new upstream
+    release -> opens a PR bumping the manifest (auto-update loop).
+  - catalog minecraft cachedImageRepo/cachedServerPath; operator build_statefulset
+    resolves <repo>:<version> + forces TYPE=CUSTOM (4 new operator tests); explicit
+    spec.image still overrides; games without a cache are unaffected.
+  - ci.yml: tools-tests job runs the version-logic suite.
+Commands (real output, live cluster):
+  $ docker run baked image -> "Done (13.563s)!" ; runtime jar-download log lines: 0
+  $ kubectl apply GameServer{minecraft,1.20.4} ->
+      statefulset image = ghcr.io/.../quetzel-game-minecraft:1.20.4
+      env TYPE=CUSTOM CUSTOM_SERVER=/opt/minecraft/server.jar MAX_PLAYERS=2
+      pod READY at ~35s ; jar-download log lines: 0
+  $ operator pytest -> 58 passed ; game-images pytest -> 8 passed ; backend -> 177
+Result: PASS — baked image runs with ZERO runtime CDN download; operator uses it
+  end-to-end. Eliminates per-pod-per-cluster jar downloads.
+Next: merge WP-E (PR); after game-images.yml publishes, make the GHCR game packages
+  public (or add a pull secret) for fresh clusters.
+Open issues: cached images must be published+pullable before fresh-cluster minecraft
+  deploys (existing cluster uses the locally-tagged image; documented in README).
