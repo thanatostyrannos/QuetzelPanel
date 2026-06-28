@@ -321,3 +321,28 @@ Result: PASS — per-server CPU/Memory gauges show real live usage; disk shows "
   (kubelet stats not exposed on this k3s); panel no longer "metrics unavailable".
 Open issues: disk % needs the kubelet /stats/summary endpoint (absent on this
   Rancher Desktop k3s); reports n/a there, works where the endpoint is exposed.
+
+## Iteration 11 — 2026-06-27 — disk % via DIRECT kubelet scrape (no API node-proxy)
+Phase: Debug follow-up. The API-server node-proxy is fully disabled on this k3s
+  (even .../proxy/healthz 404s), but metrics-server/Prometheus reach the kubelet
+  DIRECTLY — so can we.
+Diagnosis: probed the cluster —
+  - metrics-server: installed (CPU/mem fine, via direct kubelet, not the proxy).
+  - kube-state-metrics: NOT installed (irrelevant — it exposes object state, not
+    volume bytes).
+  - /api/v1/nodes/<n>/proxy/{healthz,metrics/resource,stats/summary}: all NotFound.
+  Also found the disk path read pod["spec"]["nodeName"] on a .to_dict() (snake_case)
+  pod -> node_name always None -> disk skipped regardless.
+Fix:
+  - K8sMetricsProvider._kubelet_summary: scrape https://<nodeInternalIP>:10250/
+    stats/summary with the in-pod SA token + TLS-skip (like metrics-server's
+    --kubelet-insecure-tls), API node-proxy as fallback. Read node_name handling
+    both snake_case/camelCase.
+  - ClusterRole: add nodes/stats get (kubelet webhook authz maps /stats/* ->
+    nodes/stats; nodes/proxy kept for the fallback).
+Commands (real output, live cluster):
+  $ GET /servers/acme-mc1/metrics   -> diskPercent: 3.6 (was null)
+  $ GET /servers/globex-mc2/metrics -> diskPercent: 3.6
+  $ backend pytest 180 ; helm lint 0 failed
+Result: PASS — all three gauges (CPU/Memory/Disk) now show real live usage on this
+  k3s; disk no longer depends on the API node-proxy.

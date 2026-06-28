@@ -150,25 +150,15 @@ class K8sMetricsProvider(MetricsProvider):
         cpu_pct = cpu_percent(cpu_usage, cpu_limit) if cpu_usage is not None and cpu_limit else None
         mem_pct = memory_percent(mem_usage, mem_limit) if mem_usage is not None and mem_limit else None
 
-        # --- disk via kubelet summary ---
+        # --- disk via the kubelet Summary API ---
         # The operator's volumeClaimTemplate is named "world" (manifests.py),
         # so the StatefulSet pod's PVC is "world-<name>-0".
         pvc_name = f"world-{name}-0"
-        disk_pct: float | None = None
-        try:
-            # Identify which node runs the pod
-            node_name = pod.get("spec", {}).get("nodeName")
-            if node_name:
-                # Use the proxy subresource to call kubelet /stats/summary
-                import json
-
-                raw = self._core.connect_get_node_proxy_with_path(
-                    node_name, "stats/summary"
-                )
-                summary = json.loads(raw) if isinstance(raw, (str, bytes)) else raw
-                disk_pct = disk_percent_from_summary(summary, pvc_name)
-        except Exception:  # pragma: no cover
-            disk_pct = None
+        spec = pod.get("spec") or {}
+        # .to_dict() is snake_case; tolerate both.
+        node_name = spec.get("node_name") or spec.get("nodeName")
+        summary = self._kubelet_summary(node_name) if node_name else None
+        disk_pct = disk_percent_from_summary(summary, pvc_name) if summary else None
 
         return ServerMetrics(
             name=name,
@@ -178,6 +168,53 @@ class K8sMetricsProvider(MetricsProvider):
             cpuMilli=round(cpu_usage / 1_000_000) if cpu_usage is not None else None,
             memoryMiB=round(mem_usage / 1024 / 1024) if mem_usage is not None else None,
         )
+
+    def _kubelet_summary(self, node_name: str) -> dict | None:
+        """Fetch the kubelet ``/stats/summary`` (per-PVC usedBytes/capacityBytes).
+
+        Scrapes the kubelet DIRECTLY at ``https://<nodeInternalIP>:10250/stats/summary``
+        with the in-pod ServiceAccount token — the same way metrics-server and
+        Prometheus reach it — because the API-server node-proxy is disabled on some
+        clusters (e.g. Rancher Desktop k3s, where even .../proxy/healthz 404s). Falls
+        back to the API node-proxy where direct :10250 is firewalled. Requires
+        ``nodes/stats`` (direct) or ``nodes/proxy`` (fallback) RBAC. TLS is not
+        verified (kubelet serving certs aren't in the cluster CA), matching
+        metrics-server's ``--kubelet-insecure-tls`` default. Returns the parsed
+        summary dict or None.
+        """
+        import json
+
+        # 1) direct kubelet scrape (works where the API node-proxy is disabled)
+        try:
+            import ssl
+            import urllib.request
+
+            node = self._core.read_node(node_name)
+            ip = next(
+                (a.address for a in (node.status.addresses or []) if a.type == "InternalIP"),
+                None,
+            )
+            with open("/var/run/secrets/kubernetes.io/serviceaccount/token", encoding="utf-8") as f:
+                token = f.read().strip()
+            if ip and token:
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                req = urllib.request.Request(
+                    f"https://{ip}:10250/stats/summary",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with urllib.request.urlopen(req, context=ctx, timeout=10) as r:  # noqa: S310
+                    return json.loads(r.read().decode("utf-8"))
+        except Exception:  # pragma: no cover - falls through to the proxy path
+            pass
+
+        # 2) fallback: API server node-proxy (standard clusters)
+        try:
+            raw = self._core.connect_get_node_proxy_with_path(node_name, "stats/summary")
+            return json.loads(raw) if isinstance(raw, (str, bytes)) else raw
+        except Exception:  # pragma: no cover
+            return None
 
     # ------------------------------------------------------------------
     # cluster_health
