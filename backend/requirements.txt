@@ -5,5 +5,5 @@ pydantic==2.10.4
 kubernetes==31.0.0
 # WP-A: authentication
 PyJWT==2.10.1
-authlib==1.4.1
+authlib==1.6.12
 httpx==0.28.1
